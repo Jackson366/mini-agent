@@ -22,7 +22,7 @@ export default function TaskPanel({ workspace, active = true }: TaskPanelProps) 
 
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch(`/api/tasks?workspace=${workspace}`);
+      const res = await fetch(`/api/tasks?agentId=${workspace}`);
       const data = await res.json();
       setTasks(data.tasks || []);
     } catch (err) {
@@ -63,7 +63,7 @@ export default function TaskPanel({ workspace, active = true }: TaskPanelProps) 
     <div className="flex flex-col h-full">
       <div className="border-b border-gray-800 px-6 py-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Scheduled Tasks</h2>
-        <span className="text-sm text-gray-500">{workspace}</span>
+        <span className="text-sm text-gray-500">agent: {workspace}</span>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4">

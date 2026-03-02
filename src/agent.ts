@@ -2,13 +2,15 @@ import fs from 'fs';
 import path from 'path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { MessageStream } from './message-stream.js';
-import { createPreCompactHook, createSanitizeBashHook } from './hooks.js';
+import { createMainReadOnlyGuardHook, createPreCompactHook, createSanitizeBashHook } from './hooks.js';
+import { MAIN_AGENT_ID } from './agent-context.js';
 import type { AgentInput, AgentOutput, RunQueryResult } from './types.js';
 
 export interface RunAgentOptions {
   input: AgentInput;
-  workspaceDir: string;
-  globalDir: string;
+  agentDir: string;
+  mainDir: string;
+  agentId: string;
   dataDir: string;
   mcpServerPath: string;
   onOutput: (output: AgentOutput) => void;
@@ -18,8 +20,9 @@ export interface RunAgentOptions {
 export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult> {
   const {
     input,
-    workspaceDir,
-    globalDir,
+    agentDir,
+    mainDir,
+    agentId,
     dataDir,
     mcpServerPath,
     onOutput,
@@ -33,30 +36,39 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
 
   const log = (msg: string) => console.error(`[agent] ${msg}`);
 
-  let globalClaudeMd: string | undefined;
-  const globalClaudeMdPath = path.join(globalDir, 'CLAUDE.md');
-  if (fs.existsSync(globalClaudeMdPath)) {
-    globalClaudeMd = fs.readFileSync(globalClaudeMdPath, 'utf-8');
+  let mainClaudeMd: string | undefined;
+  const mainClaudeMdPath = path.join(mainDir, 'CLAUDE.md');
+  if (fs.existsSync(mainClaudeMdPath)) {
+    mainClaudeMd = fs.readFileSync(mainClaudeMdPath, 'utf-8');
   }
 
+  let agentClaudeMd: string | undefined;
+  const agentClaudeMdPath = path.join(agentDir, 'CLAUDE.md');
+  if (agentId !== MAIN_AGENT_ID && fs.existsSync(agentClaudeMdPath)) {
+    agentClaudeMd = fs.readFileSync(agentClaudeMdPath, 'utf-8');
+  }
+
+  const mergedClaudeMd = [mainClaudeMd, agentClaudeMd].filter(Boolean).join('\n\n').trim() || undefined;
+
   const extraDirs: string[] = [];
-  if (globalDir !== workspaceDir && fs.existsSync(globalDir)) {
-    extraDirs.push(globalDir);
+  if (mainDir !== agentDir && fs.existsSync(mainDir)) {
+    extraDirs.push(mainDir);
   }
 
   const sdkEnv: Record<string, string | undefined> = { ...process.env };
 
   const mcpEnv: Record<string, string> = {
-    MINI_AGENT_WORKSPACE: input.workspace,
+    MINI_AGENT_ID: agentId,
+    MINI_AGENT_WORKSPACE: agentId,
     MINI_AGENT_DATA_DIR: dataDir,
   };
 
   const buildOptions = (resume?: string) => ({
-    cwd: workspaceDir,
+    cwd: agentDir,
     additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
     resume,
-    systemPrompt: globalClaudeMd
-      ? { type: 'preset' as const, preset: 'claude_code' as const, append: globalClaudeMd }
+    systemPrompt: mergedClaudeMd
+      ? { type: 'preset' as const, preset: 'claude_code' as const, append: mergedClaudeMd }
       : undefined,
     allowedTools: [
       'Bash',
@@ -73,8 +85,7 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
       "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
       "ANTHROPIC_AUTH_TOKEN": "d7a8f1c1ca33434ca66897e6010a556e.DYOFlZnzpTNSRQ8h"
     },
-    permissionMode: 'bypassPermissions' as const,
-    allowDangerouslySkipPermissions: true,
+    permissionMode: 'acceptEdits' as const,
     settingSources: ['project', 'user'] as ('project' | 'user')[],
     mcpServers: {
       nanoclaw: {
@@ -84,8 +95,12 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
       },
     },
     hooks: {
-      PreCompact: [{ hooks: [createPreCompactHook(log, workspaceDir, input.assistantName)] }],
-      PreToolUse: [{ matcher: 'Bash', hooks: [createSanitizeBashHook()] }],
+      PreCompact: [{ hooks: [createPreCompactHook(log, agentDir, input.assistantName)] }],
+      PreToolUse: [
+        { matcher: 'Write', hooks: [createMainReadOnlyGuardHook(log, agentDir, mainDir, agentId === MAIN_AGENT_ID)] },
+        { matcher: 'Edit', hooks: [createMainReadOnlyGuardHook(log, agentDir, mainDir, agentId === MAIN_AGENT_ID)] },
+        { matcher: 'Bash', hooks: [createMainReadOnlyGuardHook(log, agentDir, mainDir, agentId === MAIN_AGENT_ID), createSanitizeBashHook()] },
+      ],
     },
   });
 

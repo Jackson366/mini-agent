@@ -6,6 +6,7 @@ export interface SseMessage {
   status?: string;
   sessionId?: string;
   taskId?: string;
+  agentId?: string;
   workspace?: string;
 }
 
@@ -47,27 +48,27 @@ export function useSSE() {
     };
   }, [connect]);
 
-  const send = useCallback(async (text: string, workspace: string) => {
+  const send = useCallback(async (text: string, agentId: string) => {
     await fetch(`${API_BASE}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, workspace }),
+      body: JSON.stringify({ text, agentId, workspace: agentId }),
     });
   }, []);
 
-  const stop = useCallback(async (workspace: string) => {
+  const stop = useCallback(async (agentId: string) => {
     await fetch(`${API_BASE}/api/chat/stop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workspace }),
+      body: JSON.stringify({ agentId, workspace: agentId }),
     });
   }, []);
 
-  const newChat = useCallback(async (workspace: string) => {
+  const newChat = useCallback(async (agentId: string) => {
     await fetch(`${API_BASE}/api/chat/new`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workspace }),
+      body: JSON.stringify({ agentId, workspace: agentId }),
     });
     setMessages([]);
   }, []);

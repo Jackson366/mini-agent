@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { initDatabase } from './db.js';
 import { createAppServer } from './server.js';
 import { startSchedulerLoop } from './task-scheduler.js';
+import { listAgentIds, MAIN_AGENT_ID, resolveAgentContext } from './agent-context.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -27,10 +28,12 @@ const MCP_SERVER_PATH_TS = path.resolve(__dirname, 'mcp-server.ts');
 const MCP_SERVER_PATH = fs.existsSync(MCP_SERVER_PATH_JS) ? MCP_SERVER_PATH_JS : MCP_SERVER_PATH_TS;
 
 fs.mkdirSync(path.join(WORKSPACE_BASE, 'default'), { recursive: true });
+fs.mkdirSync(path.join(WORKSPACE_BASE, 'test'), { recursive: true });
 
-function syncSkills(workspace: string): void {
+function syncSkills(agentId: string): void {
   if (!fs.existsSync(SKILLS_SRC)) return;
-  const claudeDir = path.join(WORKSPACE_BASE, workspace, '.claude');
+  const { agentDir } = resolveAgentContext(WORKSPACE_BASE, agentId);
+  const claudeDir = path.join(agentDir, '.claude');
   const skillsDst = path.join(claudeDir, 'skills');
 
   const settingsFile = path.join(claudeDir, 'settings.json');
@@ -58,9 +61,7 @@ function syncSkills(workspace: string): void {
 
 initDatabase(DATA_DIR);
 
-const workspaces = fs.readdirSync(WORKSPACE_BASE, { withFileTypes: true })
-  .filter(e => e.isDirectory())
-  .map(e => e.name);
+const workspaces = listAgentIds(WORKSPACE_BASE);
 
 for (const ws of workspaces) {
   syncSkills(ws);
@@ -81,8 +82,8 @@ startSchedulerLoop({
   globalDir: GLOBAL_DIR,
   dataDir: DATA_DIR,
   mcpServerPath: MCP_SERVER_PATH,
-  onTaskMessage: (workspace, text, taskId) => {
-    broadcast({ type: 'task_message', text, taskId, workspace });
+  onTaskMessage: (agentId, text, taskId) => {
+    broadcast({ type: 'task_message', text, taskId, agentId, workspace: agentId || MAIN_AGENT_ID });
   },
 });
 

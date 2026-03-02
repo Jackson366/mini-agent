@@ -2,6 +2,7 @@ import { CronExpressionParser } from 'cron-parser';
 import { getDueTasks, updateTaskAfterRun, logTaskRun, getSession } from './db.js';
 import { runAgent } from './agent.js';
 import { MessageStream } from './message-stream.js';
+import { resolveAgentContext } from './agent-context.js';
 import type { AgentOutput } from './types.js';
 
 const SCHEDULER_POLL_INTERVAL = 60000;
@@ -11,7 +12,7 @@ export interface SchedulerOptions {
   globalDir: string;
   dataDir: string;
   mcpServerPath: string;
-  onTaskMessage: (workspace: string, text: string, taskId: string) => void;
+  onTaskMessage: (agentId: string, text: string, taskId: string) => void;
 }
 
 function computeNextRun(scheduleType: string, scheduleValue: string): string | null {
@@ -37,10 +38,11 @@ export function startSchedulerLoop(options: SchedulerOptions): void {
     const dueTasks = getDueTasks();
     for (const task of dueTasks) {
       const startTime = Date.now();
-      const workspaceDir = `${workspaceBaseDir}/${task.workspace}`;
-      const sessionId = task.context_mode === 'workspace' ? getSession(task.workspace) : undefined;
+      const agentId = task.agent_id || task.workspace;
+      const agentContext = resolveAgentContext(workspaceBaseDir, agentId);
+      const sessionId = task.context_mode === 'workspace' ? getSession(agentId) : undefined;
 
-      console.error(`[scheduler] Running task ${task.id} for workspace ${task.workspace}`);
+      console.error(`[scheduler] Running task ${task.id} for agent ${agentId}`);
 
       const stream = new MessageStream();
       const prompt = `[SCHEDULED TASK - DO NOT ASK QUESTIONS]
@@ -61,16 +63,18 @@ ${task.prompt}`;
           input: {
             prompt,
             sessionId,
-            workspace: task.workspace,
+            agentId,
+            workspace: agentId,
             isScheduledTask: true,
           },
-          workspaceDir,
-          globalDir,
+          agentDir: agentContext.agentDir,
+          mainDir: globalDir,
+          agentId,
           dataDir,
           mcpServerPath,
           onOutput: (output: AgentOutput) => {
             if (output.result) {
-              onTaskMessage(task.workspace, output.result, task.id);
+              onTaskMessage(agentId, output.result, task.id);
             }
           },
           stream,

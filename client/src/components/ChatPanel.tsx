@@ -47,7 +47,7 @@ export default function ChatPanel({ sse, workspace, onUnread }: ChatPanelProps) 
     const currentWs = workspaceRef.current;
 
     for (const msg of newMessages) {
-      const msgWs = msg.workspace || 'default';
+      const msgWs = msg.agentId || msg.workspace || 'main';
 
       if (msg.type === 'assistant' && msg.text) {
         const entry: ChatMessage = { role: 'assistant', content: msg.text! };
@@ -141,7 +141,7 @@ export default function ChatPanel({ sse, workspace, onUnread }: ChatPanelProps) 
       <div className="border-b border-gray-800 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-semibold">Chat</h2>
-          <span className="text-sm text-gray-500">workspace: {workspace}</span>
+          <span className="text-sm text-gray-500">agent: {workspace}</span>
         </div>
         <button
           onClick={handleNewChat}

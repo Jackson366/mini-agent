@@ -5,7 +5,7 @@ import TaskPanel from './components/TaskPanel';
 import Sidebar from './components/Sidebar';
 
 export default function App() {
-  const [workspace, setWorkspace] = useState('default');
+  const [workspace, setWorkspace] = useState('main');
   const [view, setView] = useState<'chat' | 'tasks'>('chat');
   const [unreadWorkspaces, setUnreadWorkspaces] = useState<Set<string>>(new Set());
   const sse = useSSE();

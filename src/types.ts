@@ -1,7 +1,8 @@
 export interface AgentInput {
   prompt: string;
   sessionId?: string;
-  workspace: string;
+  agentId: string;
+  workspace?: string;
   isScheduledTask?: boolean;
   assistantName?: string;
 }
@@ -16,6 +17,7 @@ export interface AgentOutput {
 export interface ScheduledTask {
   id: string;
   workspace: string;
+  agent_id?: string;
   prompt: string;
   schedule_type: 'cron' | 'interval' | 'once';
   schedule_value: string;
@@ -70,5 +72,6 @@ export interface SseMessageOut {
   status?: string;
   sessionId?: string;
   taskId?: string;
+  agentId?: string;
   workspace?: string;
 }

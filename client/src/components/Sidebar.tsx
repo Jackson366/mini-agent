@@ -17,13 +17,14 @@ export default function Sidebar({
   connected,
   unreadWorkspaces,
 }: SidebarProps) {
-  const [workspaces, setWorkspaces] = useState<string[]>(['default']);
+  const [workspaces, setWorkspaces] = useState<string[]>(['main']);
 
   useEffect(() => {
-    fetch('/api/workspaces')
+    fetch('/api/agents')
       .then(r => r.json())
       .then(data => {
-        if (data.workspaces?.length) setWorkspaces(data.workspaces);
+        if (data.agents?.length) setWorkspaces(data.agents);
+        else if (data.workspaces?.length) setWorkspaces(data.workspaces);
       })
       .catch(() => {});
   }, []);
@@ -66,7 +67,7 @@ export default function Sidebar({
       </nav>
 
       <div className="px-3 py-4 border-t border-gray-800">
-        <p className="text-xs text-gray-500 mb-2 px-3">Workspace</p>
+        <p className="text-xs text-gray-500 mb-2 px-3">Agent</p>
         <div className="space-y-1">
           {workspaces.map((ws) => (
             <button

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { runAgent } from './agent.js';
 import { MessageStream } from './message-stream.js';
 import { setSession, getSession, deleteSession, getAllTasks, getTasksForWorkspace, deleteTask, updateTask } from './db.js';
+import { listAgentIds, MAIN_AGENT_ID, resolveAgentContext, resolveAgentId } from './agent-context.js';
 import type { AgentOutput, SseMessageOut } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -20,7 +21,7 @@ export interface ServerOptions {
 
 interface ActiveSession {
   stream: MessageStream;
-  workspace: string;
+  agentId: string;
 }
 
 export function createAppServer(options: ServerOptions) {
@@ -52,7 +53,7 @@ export function createAppServer(options: ServerOptions) {
   }
 
   function broadcastTo(workspace: string, msg: SseMessageOut) {
-    broadcast({ ...msg, workspace });
+    broadcast({ ...msg, agentId: workspace, workspace });
   }
 
   // SSE stream endpoint
@@ -76,17 +77,19 @@ export function createAppServer(options: ServerOptions) {
 
   // Send message
   app.post('/api/chat', async (req, res) => {
-    const { text, workspace: ws } = req.body as { text?: string; workspace?: string };
+    const { text } = req.body as { text?: string };
     if (!text) {
       res.status(400).json({ error: 'text required' });
       return;
     }
 
-    const workspace = ws || 'default';
-    const workspaceDir = path.join(workspaceBaseDir, workspace);
-    fs.mkdirSync(workspaceDir, { recursive: true });
+    const agentId = resolveAgentId(req.body as { agentId?: string; workspace?: string }) || MAIN_AGENT_ID;
+    const agentContext = resolveAgentContext(workspaceBaseDir, agentId);
+    if (!agentContext.isMainAgent) {
+      fs.mkdirSync(agentContext.agentDir, { recursive: true });
+    }
 
-    const existing = activeSessions.get(workspace);
+    const existing = activeSessions.get(agentId);
     if (existing && !existing.stream.isDone()) {
       existing.stream.push(text);
       res.json({ ok: true, appended: true });
@@ -95,28 +98,29 @@ export function createAppServer(options: ServerOptions) {
 
     const stream = new MessageStream();
     stream.push(text);
-    activeSessions.set(workspace, { stream, workspace });
+    activeSessions.set(agentId, { stream, agentId });
 
-    broadcast({ type: 'status', status: 'thinking', workspace });
+    broadcast({ type: 'status', status: 'thinking', agentId, workspace: agentId });
     res.json({ ok: true });
 
-    const sessionId = getSession(workspace);
+    const sessionId = getSession(agentId);
 
     try {
       const result = await runAgent({
-        input: { prompt: text, sessionId, workspace },
-        workspaceDir,
-        globalDir,
+        input: { prompt: text, sessionId, agentId, workspace: agentId },
+        agentDir: agentContext.agentDir,
+        mainDir: globalDir,
+        agentId,
         dataDir,
         mcpServerPath,
         onOutput: (output: AgentOutput) => {
           if (output.newSessionId) {
-            setSession(workspace, output.newSessionId);
+            setSession(agentId, output.newSessionId);
           }
           if (output.result) {
             const cleaned = output.result.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
             if (cleaned) {
-              broadcastTo(workspace, { type: 'assistant', text: cleaned });
+              broadcastTo(agentId, { type: 'assistant', text: cleaned });
             }
           }
         },
@@ -124,31 +128,30 @@ export function createAppServer(options: ServerOptions) {
       });
 
       if (result.newSessionId) {
-        setSession(workspace, result.newSessionId);
-        broadcast({ type: 'session', sessionId: result.newSessionId, workspace });
+        setSession(agentId, result.newSessionId);
+        broadcast({ type: 'session', sessionId: result.newSessionId, agentId, workspace: agentId });
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error('[sse] Agent error:', errorMsg);
-      broadcast({ type: 'error', text: errorMsg, workspace });
+      broadcast({ type: 'error', text: errorMsg, agentId, workspace: agentId });
     } finally {
-      activeSessions.delete(workspace);
-      broadcast({ type: 'status', status: 'idle', workspace });
+      activeSessions.delete(agentId);
+      broadcast({ type: 'status', status: 'idle', agentId, workspace: agentId });
     }
   });
 
   // New conversation
   app.post('/api/chat/new', (req, res) => {
-    const workspace = req.body.workspace || 'default';
-    deleteSession(workspace);
+    const agentId = resolveAgentId(req.body as { agentId?: string; workspace?: string }) || MAIN_AGENT_ID;
+    deleteSession(agentId);
     res.json({ ok: true });
   });
 
   // Stop agent
   app.post('/api/chat/stop', (req, res) => {
-    const { workspace: ws } = req.body as { workspace?: string };
-    const workspace = ws || 'default';
-    const session = activeSessions.get(workspace);
+    const agentId = resolveAgentId(req.body as { agentId?: string; workspace?: string }) || MAIN_AGENT_ID;
+    const session = activeSessions.get(agentId);
     if (session) {
       session.stream.end();
     }
@@ -158,16 +161,24 @@ export function createAppServer(options: ServerOptions) {
   // REST APIs
   app.get('/api/workspaces', (_req, res) => {
     try {
-      const entries = fs.readdirSync(workspaceBaseDir, { withFileTypes: true });
-      const workspaces = entries.filter(e => e.isDirectory()).map(e => e.name);
+      const workspaces = listAgentIds(workspaceBaseDir);
       res.json({ workspaces });
     } catch {
-      res.json({ workspaces: ['default'] });
+      res.json({ workspaces: [MAIN_AGENT_ID] });
+    }
+  });
+
+  app.get('/api/agents', (_req, res) => {
+    try {
+      const agents = listAgentIds(workspaceBaseDir);
+      res.json({ agents });
+    } catch {
+      res.json({ agents: [MAIN_AGENT_ID] });
     }
   });
 
   app.get('/api/tasks', (req, res) => {
-    const workspace = req.query.workspace as string | undefined;
+    const workspace = (req.query.agentId as string | undefined) || (req.query.workspace as string | undefined);
     const tasks = workspace ? getTasksForWorkspace(workspace) : getAllTasks();
     res.json({ tasks });
   });
@@ -197,7 +208,8 @@ export function createAppServer(options: ServerOptions) {
           const data = JSON.parse(fs.readFileSync(filepath, 'utf-8'));
           fs.unlinkSync(filepath);
           if (data.type === 'message' && data.text) {
-            broadcast({ type: 'task_message', text: data.text, taskId: data.taskId, workspace: data.workspace });
+            const agentId = data.agentId || data.workspace || MAIN_AGENT_ID;
+            broadcast({ type: 'task_message', text: data.text, taskId: data.taskId, agentId, workspace: agentId });
           }
         } catch {
           try { fs.unlinkSync(filepath); } catch { /* ignore */ }
