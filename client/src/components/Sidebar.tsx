@@ -1,29 +1,31 @@
 import { useState, useEffect } from 'react';
 
+const API_BASE = import.meta.env.DEV ? 'http://localhost:3210' : '';
+
 interface SidebarProps {
-  workspace: string;
-  onWorkspaceChange: (ws: string) => void;
+  agentId: string;
+  onAgentChange: (id: string) => void;
   view: 'chat' | 'tasks';
   onViewChange: (view: 'chat' | 'tasks') => void;
   connected: boolean;
-  unreadWorkspaces?: Set<string>;
+  unreadAgents?: Set<string>;
 }
 
 export default function Sidebar({
-  workspace,
-  onWorkspaceChange,
+  agentId,
+  onAgentChange,
   view,
   onViewChange,
   connected,
-  unreadWorkspaces,
+  unreadAgents,
 }: SidebarProps) {
-  const [workspaces, setWorkspaces] = useState<string[]>(['default']);
+  const [agents, setAgents] = useState<string[]>(['main']);
 
   useEffect(() => {
-    fetch('/api/workspaces')
+    fetch(`${API_BASE}/api/agents`)
       .then(r => r.json())
       .then(data => {
-        if (data.workspaces?.length) setWorkspaces(data.workspaces);
+        if (data.agents?.length) setAgents(data.agents);
       })
       .catch(() => {});
   }, []);
@@ -66,20 +68,20 @@ export default function Sidebar({
       </nav>
 
       <div className="px-3 py-4 border-t border-gray-800">
-        <p className="text-xs text-gray-500 mb-2 px-3">Workspace</p>
+        <p className="text-xs text-gray-500 mb-2 px-3">Agent</p>
         <div className="space-y-1">
-          {workspaces.map((ws) => (
+          {agents.map((id) => (
             <button
-              key={ws}
-              onClick={() => onWorkspaceChange(ws)}
+              key={id}
+              onClick={() => onAgentChange(id)}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm transition flex items-center justify-between ${
-                workspace === ws
+                agentId === id
                   ? 'bg-blue-600/20 text-blue-400'
                   : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
               }`}
             >
-              {ws}
-              {unreadWorkspaces?.has(ws) && workspace !== ws && (
+              {id}
+              {unreadAgents?.has(id) && agentId !== id && (
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               )}
             </button>

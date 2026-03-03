@@ -26,11 +26,14 @@ const MCP_SERVER_PATH_JS = path.resolve(__dirname, 'mcp-server.js');
 const MCP_SERVER_PATH_TS = path.resolve(__dirname, 'mcp-server.ts');
 const MCP_SERVER_PATH = fs.existsSync(MCP_SERVER_PATH_JS) ? MCP_SERVER_PATH_JS : MCP_SERVER_PATH_TS;
 
-fs.mkdirSync(path.join(WORKSPACE_BASE, 'default'), { recursive: true });
+const INTERNAL_AGENTS = new Set([
+  'requirement-analyst', 'platform-operations', 'buyer-domain',
+  'seller-domain', 'service-provider-domain', 'ui-expert', 'ux-expert',
+]);
 
-function syncSkills(workspace: string): void {
+function syncSkills(agentDir: string): void {
   if (!fs.existsSync(SKILLS_SRC)) return;
-  const claudeDir = path.join(WORKSPACE_BASE, workspace, '.claude');
+  const claudeDir = path.join(agentDir, '.claude');
   const skillsDst = path.join(claudeDir, 'skills');
 
   const settingsFile = path.join(claudeDir, 'settings.json');
@@ -40,7 +43,6 @@ function syncSkills(workspace: string): void {
       settingsFile,
       JSON.stringify({
         env: {
-          CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
           CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
           CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
         },
@@ -58,13 +60,16 @@ function syncSkills(workspace: string): void {
 
 initDatabase(DATA_DIR);
 
-const workspaces = fs.readdirSync(WORKSPACE_BASE, { withFileTypes: true })
-  .filter(e => e.isDirectory())
+const subDirs = fs.readdirSync(WORKSPACE_BASE, { withFileTypes: true })
+  .filter(e => e.isDirectory() && !e.name.startsWith('.'))
   .map(e => e.name);
 
-for (const ws of workspaces) {
-  syncSkills(ws);
+for (const dir of subDirs) {
+  if (!INTERNAL_AGENTS.has(dir)) {
+    syncSkills(path.join(WORKSPACE_BASE, dir));
+  }
 }
+syncSkills(WORKSPACE_BASE);
 
 process.env.HOME = process.env.HOME || '/tmp';
 
@@ -81,8 +86,8 @@ startSchedulerLoop({
   globalDir: GLOBAL_DIR,
   dataDir: DATA_DIR,
   mcpServerPath: MCP_SERVER_PATH,
-  onTaskMessage: (workspace, text, taskId) => {
-    broadcast({ type: 'task_message', text, taskId, workspace });
+  onTaskMessage: (agentId, text, taskId) => {
+    broadcast({ type: 'task_message', text, taskId, agentId });
   },
 });
 

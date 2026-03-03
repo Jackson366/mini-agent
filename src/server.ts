@@ -5,10 +5,15 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { runAgent } from './agent.js';
 import { MessageStream } from './message-stream.js';
-import { setSession, getSession, deleteSession, getAllTasks, getTasksForWorkspace, deleteTask, updateTask } from './db.js';
-import type { AgentOutput, SseMessageOut } from './types.js';
+import { setSession, getSession, deleteSession, getAllTasks, getTasksForAgent, deleteTask, updateTask } from './db.js';
+import type { AgentOutput, ClarificationQuestion, SseMessageOut } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const INTERNAL_AGENTS = new Set([
+  'requirement-analyst', 'platform-operations', 'buyer-domain',
+  'seller-domain', 'service-provider-domain', 'ui-expert', 'ux-expert',
+]);
 
 export interface ServerOptions {
   port: number;
@@ -20,7 +25,12 @@ export interface ServerOptions {
 
 interface ActiveSession {
   stream: MessageStream;
-  workspace: string;
+  agentId: string;
+  pendingClarifications: Map<string, {
+    questions: ClarificationQuestion[];
+    resolve: (answers: Record<string, string>) => void;
+    reject: (err: Error) => void;
+  }>;
 }
 
 export function createAppServer(options: ServerOptions) {
@@ -51,11 +61,10 @@ export function createAppServer(options: ServerOptions) {
     }
   }
 
-  function broadcastTo(workspace: string, msg: SseMessageOut) {
-    broadcast({ ...msg, workspace });
+  function broadcastTo(agentId: string, msg: SseMessageOut) {
+    broadcast({ ...msg, agentId });
   }
 
-  // SSE stream endpoint
   app.get('/api/chat/stream', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -74,19 +83,19 @@ export function createAppServer(options: ServerOptions) {
     });
   });
 
-  // Send message
   app.post('/api/chat', async (req, res) => {
-    const { text, workspace: ws } = req.body as { text?: string; workspace?: string };
+    const { text, agentId: reqAgent } = req.body as { text?: string; agentId?: string };
     if (!text) {
       res.status(400).json({ error: 'text required' });
       return;
     }
 
-    const workspace = ws || 'default';
-    const workspaceDir = path.join(workspaceBaseDir, workspace);
-    fs.mkdirSync(workspaceDir, { recursive: true });
+    const agentId = reqAgent || 'main';
+    const isMain = agentId === 'main';
+    const agentDir = isMain ? workspaceBaseDir : path.join(workspaceBaseDir, agentId);
+    if (!isMain) fs.mkdirSync(agentDir, { recursive: true });
 
-    const existing = activeSessions.get(workspace);
+    const existing = activeSessions.get(agentId);
     if (existing && !existing.stream.isDone()) {
       existing.stream.push(text);
       res.json({ ok: true, appended: true });
@@ -95,80 +104,142 @@ export function createAppServer(options: ServerOptions) {
 
     const stream = new MessageStream();
     stream.push(text);
-    activeSessions.set(workspace, { stream, workspace });
+    activeSessions.set(agentId, { stream, agentId, pendingClarifications: new Map() });
 
-    broadcast({ type: 'status', status: 'thinking', workspace });
+    broadcast({ type: 'status', status: 'thinking', agentId });
     res.json({ ok: true });
 
-    const sessionId = getSession(workspace);
+    const sessionId = getSession(agentId);
 
     try {
       const result = await runAgent({
-        input: { prompt: text, sessionId, workspace },
-        workspaceDir,
+        input: { prompt: text, sessionId, agentId },
+        agentDir,
         globalDir,
         dataDir,
         mcpServerPath,
         onOutput: (output: AgentOutput) => {
           if (output.newSessionId) {
-            setSession(workspace, output.newSessionId);
+            setSession(agentId, output.newSessionId);
           }
           if (output.result) {
             const cleaned = output.result.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
             if (cleaned) {
-              broadcastTo(workspace, { type: 'assistant', text: cleaned });
+              broadcastTo(agentId, { type: 'assistant', text: cleaned });
             }
           }
+        },
+        onClarification: ({ toolUseId, questions }) => {
+          return new Promise<Record<string, string>>((resolve, reject) => {
+            const session = activeSessions.get(agentId);
+            if (!session) {
+              reject(new Error(`No active session for agent ${agentId}`));
+              return;
+            }
+            session.pendingClarifications.set(toolUseId, { questions, resolve, reject });
+            broadcastTo(agentId, { type: 'clarification_request', toolUseId, questions });
+          });
         },
         stream,
       });
 
       if (result.newSessionId) {
-        setSession(workspace, result.newSessionId);
-        broadcast({ type: 'session', sessionId: result.newSessionId, workspace });
+        setSession(agentId, result.newSessionId);
+        broadcast({ type: 'session', sessionId: result.newSessionId, agentId });
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error('[sse] Agent error:', errorMsg);
-      broadcast({ type: 'error', text: errorMsg, workspace });
+      broadcast({ type: 'error', text: errorMsg, agentId });
     } finally {
-      activeSessions.delete(workspace);
-      broadcast({ type: 'status', status: 'idle', workspace });
+      const session = activeSessions.get(agentId);
+      if (session) {
+        for (const [toolUseId, pending] of session.pendingClarifications.entries()) {
+          pending.reject(new Error(`Session ended before clarification was submitted: ${toolUseId}`));
+        }
+        session.pendingClarifications.clear();
+      }
+      activeSessions.delete(agentId);
+      broadcast({ type: 'status', status: 'idle', agentId });
     }
   });
 
-  // New conversation
   app.post('/api/chat/new', (req, res) => {
-    const workspace = req.body.workspace || 'default';
-    deleteSession(workspace);
+    const agentId = req.body.agentId || 'main';
+    const session = activeSessions.get(agentId);
+    if (session) {
+      for (const pending of session.pendingClarifications.values()) {
+        pending.reject(new Error(`Session reset by user for agent ${agentId}`));
+      }
+      session.pendingClarifications.clear();
+    }
+    deleteSession(agentId);
     res.json({ ok: true });
   });
 
-  // Stop agent
   app.post('/api/chat/stop', (req, res) => {
-    const { workspace: ws } = req.body as { workspace?: string };
-    const workspace = ws || 'default';
-    const session = activeSessions.get(workspace);
+    const agentId = req.body.agentId || 'main';
+    const session = activeSessions.get(agentId);
     if (session) {
+      for (const pending of session.pendingClarifications.values()) {
+        pending.reject(new Error(`Session stopped by user for agent ${agentId}`));
+      }
+      session.pendingClarifications.clear();
       session.stream.end();
     }
     res.json({ ok: true });
   });
 
-  // REST APIs
-  app.get('/api/workspaces', (_req, res) => {
+  app.post('/api/chat/answer', (req, res) => {
+    const { agentId: reqAgent, toolUseId, answers } = req.body as {
+      agentId?: string;
+      toolUseId?: string;
+      answers?: Record<string, string>;
+    };
+
+    const agentId = reqAgent || 'main';
+    const session = activeSessions.get(agentId);
+    if (!session) {
+      res.status(404).json({ error: `No active session for agent ${agentId}` });
+      return;
+    }
+    if (!toolUseId) {
+      res.status(400).json({ error: 'toolUseId required' });
+      return;
+    }
+    if (!answers || typeof answers !== 'object') {
+      res.status(400).json({ error: 'answers required' });
+      return;
+    }
+
+    const pending = session.pendingClarifications.get(toolUseId);
+    if (!pending) {
+      res.status(404).json({ error: `No pending clarification for toolUseId ${toolUseId}` });
+      return;
+    }
+
+    session.pendingClarifications.delete(toolUseId);
+    pending.resolve(answers);
+    res.json({ ok: true });
+  });
+
+  app.get('/api/agents', (_req, res) => {
     try {
       const entries = fs.readdirSync(workspaceBaseDir, { withFileTypes: true });
-      const workspaces = entries.filter(e => e.isDirectory()).map(e => e.name);
-      res.json({ workspaces });
+      const agents = entries
+        .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+        .map(e => e.name)
+        .filter(name => !INTERNAL_AGENTS.has(name));
+      if (!agents.includes('main')) agents.unshift('main');
+      res.json({ agents });
     } catch {
-      res.json({ workspaces: ['default'] });
+      res.json({ agents: ['main'] });
     }
   });
 
   app.get('/api/tasks', (req, res) => {
-    const workspace = req.query.workspace as string | undefined;
-    const tasks = workspace ? getTasksForWorkspace(workspace) : getAllTasks();
+    const agentId = req.query.agentId as string | undefined;
+    const tasks = agentId ? getTasksForAgent(agentId) : getAllTasks();
     res.json({ tasks });
   });
 
@@ -185,7 +256,6 @@ export function createAppServer(options: ServerOptions) {
     res.json({ ok: true });
   });
 
-  // MCP message polling
   const pollMcpMessages = () => {
     const mcpDir = path.resolve(dataDir, 'mcp-messages');
     if (!fs.existsSync(mcpDir)) return;
@@ -197,7 +267,7 @@ export function createAppServer(options: ServerOptions) {
           const data = JSON.parse(fs.readFileSync(filepath, 'utf-8'));
           fs.unlinkSync(filepath);
           if (data.type === 'message' && data.text) {
-            broadcast({ type: 'task_message', text: data.text, taskId: data.taskId, workspace: data.workspace });
+            broadcast({ type: 'task_message', text: data.text, taskId: data.taskId, agentId: data.agentId || data.workspace });
           }
         } catch {
           try { fs.unlinkSync(filepath); } catch { /* ignore */ }

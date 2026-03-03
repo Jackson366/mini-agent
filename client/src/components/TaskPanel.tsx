@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 
+const API_BASE = import.meta.env.DEV ? 'http://localhost:3210' : '';
+
 interface Task {
   id: string;
-  workspace: string;
+  agent_id: string;
   prompt: string;
   schedule_type: string;
   schedule_value: string;
@@ -12,17 +14,17 @@ interface Task {
 }
 
 interface TaskPanelProps {
-  workspace: string;
+  agentId: string;
   active?: boolean;
 }
 
-export default function TaskPanel({ workspace, active = true }: TaskPanelProps) {
+export default function TaskPanel({ agentId, active = true }: TaskPanelProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch(`/api/tasks?workspace=${workspace}`);
+      const res = await fetch(`${API_BASE}/api/tasks?agentId=${agentId}`);
       const data = await res.json();
       setTasks(data.tasks || []);
     } catch (err) {
@@ -30,7 +32,7 @@ export default function TaskPanel({ workspace, active = true }: TaskPanelProps) 
     } finally {
       setLoading(false);
     }
-  }, [workspace]);
+  }, [agentId]);
 
   useEffect(() => {
     if (!active) return;
@@ -41,7 +43,7 @@ export default function TaskPanel({ workspace, active = true }: TaskPanelProps) 
 
   const handleToggle = async (task: Task) => {
     const newStatus = task.status === 'active' ? 'paused' : 'active';
-    await fetch(`/api/tasks/${task.id}`, {
+    await fetch(`${API_BASE}/api/tasks/${task.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: newStatus }),
@@ -50,7 +52,7 @@ export default function TaskPanel({ workspace, active = true }: TaskPanelProps) 
   };
 
   const handleDelete = async (taskId: string) => {
-    await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+    await fetch(`${API_BASE}/api/tasks/${taskId}`, { method: 'DELETE' });
     fetchTasks();
   };
 
@@ -63,7 +65,7 @@ export default function TaskPanel({ workspace, active = true }: TaskPanelProps) 
     <div className="flex flex-col h-full">
       <div className="border-b border-gray-800 px-6 py-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Scheduled Tasks</h2>
-        <span className="text-sm text-gray-500">{workspace}</span>
+        <span className="text-sm text-gray-500">{agentId}</span>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4">

@@ -5,44 +5,44 @@ import TaskPanel from './components/TaskPanel';
 import Sidebar from './components/Sidebar';
 
 export default function App() {
-  const [workspace, setWorkspace] = useState('default');
+  const [agentId, setAgentId] = useState('main');
   const [view, setView] = useState<'chat' | 'tasks'>('chat');
-  const [unreadWorkspaces, setUnreadWorkspaces] = useState<Set<string>>(new Set());
+  const [unreadAgents, setUnreadAgents] = useState<Set<string>>(new Set());
   const sse = useSSE();
 
-  const handleWorkspaceChange = useCallback((ws: string) => {
-    setWorkspace(ws);
-    setUnreadWorkspaces(prev => {
-      if (!prev.has(ws)) return prev;
+  const handleAgentChange = useCallback((id: string) => {
+    setAgentId(id);
+    setUnreadAgents(prev => {
+      if (!prev.has(id)) return prev;
       const next = new Set(prev);
-      next.delete(ws);
+      next.delete(id);
       return next;
     });
   }, []);
 
-  const handleUnread = useCallback((ws: string) => {
-    setUnreadWorkspaces(prev => {
-      if (prev.has(ws)) return prev;
-      return new Set(prev).add(ws);
+  const handleUnread = useCallback((id: string) => {
+    setUnreadAgents(prev => {
+      if (prev.has(id)) return prev;
+      return new Set(prev).add(id);
     });
   }, []);
 
   return (
     <div className="flex h-screen bg-gray-950 text-gray-100">
       <Sidebar
-        workspace={workspace}
-        onWorkspaceChange={handleWorkspaceChange}
+        agentId={agentId}
+        onAgentChange={handleAgentChange}
         view={view}
         onViewChange={setView}
         connected={sse.connected}
-        unreadWorkspaces={unreadWorkspaces}
+        unreadAgents={unreadAgents}
       />
       <main className="flex-1 flex flex-col">
         <div className={view === 'chat' ? 'flex flex-col flex-1 min-h-0' : 'hidden'}>
-          <ChatPanel sse={sse} workspace={workspace} onUnread={handleUnread} />
+          <ChatPanel sse={sse} agentId={agentId} onUnread={handleUnread} />
         </div>
         <div className={view === 'tasks' ? 'flex flex-col flex-1' : 'hidden'}>
-          <TaskPanel workspace={workspace} active={view === 'tasks'} />
+          <TaskPanel agentId={agentId} active={view === 'tasks'} />
         </div>
       </main>
     </div>

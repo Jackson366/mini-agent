@@ -7,11 +7,11 @@ import fs from 'fs';
 import {
   createTask,
   getAllTasks,
-  getTasksForWorkspace,
+  getTasksForAgent,
   initDatabase,
 } from './db.js';
 
-const workspace = process.env.MINI_AGENT_WORKSPACE || 'default';
+const agentId = process.env.MINI_AGENT_ID || 'main';
 const dataDir = process.env.MINI_AGENT_DATA_DIR || path.resolve(process.cwd(), 'data');
 
 initDatabase(dataDir);
@@ -35,7 +35,7 @@ server.tool(
     const tempPath = `${filepath}.tmp`;
     fs.writeFileSync(tempPath, JSON.stringify({
       type: 'message',
-      workspace,
+      agentId,
       text: args.text,
       timestamp: new Date().toISOString(),
     }));
@@ -111,7 +111,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
 
     createTask({
       id: taskId,
-      workspace,
+      agent_id: agentId,
       prompt: args.prompt,
       schedule_type: args.schedule_type,
       schedule_value: args.schedule_value,
@@ -129,10 +129,10 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
 
 server.tool(
   'list_tasks',
-  'List all scheduled tasks for the current workspace.',
+  'List all scheduled tasks for the current agent.',
   {},
   async () => {
-    const tasks = getTasksForWorkspace(workspace);
+    const tasks = getTasksForAgent(agentId);
 
     if (tasks.length === 0) {
       return { content: [{ type: 'text' as const, text: 'No scheduled tasks found.' }] };

@@ -1,7 +1,7 @@
 export interface AgentInput {
   prompt: string;
   sessionId?: string;
-  workspace: string;
+  agentId: string;
   isScheduledTask?: boolean;
   assistantName?: string;
 }
@@ -13,9 +13,21 @@ export interface AgentOutput {
   error?: string;
 }
 
+export interface ClarificationOption {
+  label: string;
+  description: string;
+}
+
+export interface ClarificationQuestion {
+  question: string;
+  header: string;
+  options: ClarificationOption[];
+  multiSelect?: boolean;
+}
+
 export interface ScheduledTask {
   id: string;
-  workspace: string;
+  agent_id: string;
   prompt: string;
   schedule_type: 'cron' | 'interval' | 'once';
   schedule_value: string;
@@ -65,10 +77,12 @@ export interface RunQueryResult {
 }
 
 export interface SseMessageOut {
-  type: 'assistant' | 'status' | 'error' | 'task_message' | 'session';
+  type: 'assistant' | 'status' | 'error' | 'task_message' | 'session' | 'clarification_request';
   text?: string;
   status?: string;
   sessionId?: string;
   taskId?: string;
-  workspace?: string;
+  agentId?: string;
+  toolUseId?: string;
+  questions?: ClarificationQuestion[];
 }

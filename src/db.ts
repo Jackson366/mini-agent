@@ -8,12 +8,12 @@ let db: Database.Database;
 function createSchema(database: Database.Database): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
-      workspace TEXT PRIMARY KEY,
+      agent_id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS scheduled_tasks (
       id TEXT PRIMARY KEY,
-      workspace TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
       prompt TEXT NOT NULL,
       schedule_type TEXT NOT NULL,
       schedule_value TEXT NOT NULL,
@@ -40,37 +40,54 @@ function createSchema(database: Database.Database): void {
   `);
 }
 
+function migrateSchema(database: Database.Database): void {
+  const tableInfo = database.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
+  const hasOldColumn = tableInfo.some(col => col.name === 'workspace');
+  if (!hasOldColumn) return;
+
+  database.exec(`
+    ALTER TABLE sessions RENAME COLUMN workspace TO agent_id;
+  `);
+  const taskInfo = database.prepare("PRAGMA table_info(scheduled_tasks)").all() as Array<{ name: string }>;
+  if (taskInfo.some(col => col.name === 'workspace')) {
+    database.exec(`ALTER TABLE scheduled_tasks RENAME COLUMN workspace TO agent_id;`);
+  }
+  database.prepare("UPDATE sessions SET agent_id = 'main' WHERE agent_id = 'default'").run();
+  database.prepare("UPDATE scheduled_tasks SET agent_id = 'main' WHERE agent_id = 'default'").run();
+}
+
 export function initDatabase(dataDir: string): void {
   const dbPath = path.join(dataDir, 'store.db');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   db = new Database(dbPath);
   createSchema(db);
+  migrateSchema(db);
 }
 
-export function getSession(workspace: string): string | undefined {
+export function getSession(agentId: string): string | undefined {
   const row = db
-    .prepare('SELECT session_id FROM sessions WHERE workspace = ?')
-    .get(workspace) as { session_id: string } | undefined;
+    .prepare('SELECT session_id FROM sessions WHERE agent_id = ?')
+    .get(agentId) as { session_id: string } | undefined;
   return row?.session_id;
 }
 
-export function deleteSession(workspace: string): void {
-  db.prepare('DELETE FROM sessions WHERE workspace = ?').run(workspace);
+export function deleteSession(agentId: string): void {
+  db.prepare('DELETE FROM sessions WHERE agent_id = ?').run(agentId);
 }
 
-export function setSession(workspace: string, sessionId: string): void {
+export function setSession(agentId: string, sessionId: string): void {
   db.prepare(
-    'INSERT OR REPLACE INTO sessions (workspace, session_id) VALUES (?, ?)',
-  ).run(workspace, sessionId);
+    'INSERT OR REPLACE INTO sessions (agent_id, session_id) VALUES (?, ?)',
+  ).run(agentId, sessionId);
 }
 
 export function getAllSessions(): Record<string, string> {
   const rows = db
-    .prepare('SELECT workspace, session_id FROM sessions')
-    .all() as Array<{ workspace: string; session_id: string }>;
+    .prepare('SELECT agent_id, session_id FROM sessions')
+    .all() as Array<{ agent_id: string; session_id: string }>;
   const result: Record<string, string> = {};
   for (const row of rows) {
-    result[row.workspace] = row.session_id;
+    result[row.agent_id] = row.session_id;
   }
   return result;
 }
@@ -79,11 +96,11 @@ export function createTask(
   task: Omit<ScheduledTask, 'last_run' | 'last_result'>,
 ): void {
   db.prepare(
-    `INSERT INTO scheduled_tasks (id, workspace, prompt, schedule_type, schedule_value, context_mode, next_run, status, created_at)
+    `INSERT INTO scheduled_tasks (id, agent_id, prompt, schedule_type, schedule_value, context_mode, next_run, status, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     task.id,
-    task.workspace,
+    task.agent_id,
     task.prompt,
     task.schedule_type,
     task.schedule_value,
@@ -100,12 +117,12 @@ export function getTaskById(id: string): ScheduledTask | undefined {
     | undefined;
 }
 
-export function getTasksForWorkspace(workspace: string): ScheduledTask[] {
+export function getTasksForAgent(agentId: string): ScheduledTask[] {
   return db
     .prepare(
-      'SELECT * FROM scheduled_tasks WHERE workspace = ? ORDER BY created_at DESC',
+      'SELECT * FROM scheduled_tasks WHERE agent_id = ? ORDER BY created_at DESC',
     )
-    .all(workspace) as ScheduledTask[];
+    .all(agentId) as ScheduledTask[];
 }
 
 export function getAllTasks(): ScheduledTask[] {

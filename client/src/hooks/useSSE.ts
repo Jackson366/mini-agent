@@ -1,12 +1,19 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 
 export interface SseMessage {
-  type: 'assistant' | 'status' | 'error' | 'task_message' | 'session';
+  type: 'assistant' | 'status' | 'error' | 'task_message' | 'session' | 'clarification_request';
   text?: string;
   status?: string;
   sessionId?: string;
   taskId?: string;
-  workspace?: string;
+  agentId?: string;
+  toolUseId?: string;
+  questions?: Array<{
+    question: string;
+    header: string;
+    multiSelect?: boolean;
+    options: Array<{ label: string; description: string }>;
+  }>;
 }
 
 const API_BASE = import.meta.env.DEV ? 'http://localhost:3210' : '';
@@ -47,27 +54,27 @@ export function useSSE() {
     };
   }, [connect]);
 
-  const send = useCallback(async (text: string, workspace: string) => {
+  const send = useCallback(async (text: string, agentId: string) => {
     await fetch(`${API_BASE}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, workspace }),
+      body: JSON.stringify({ text, agentId }),
     });
   }, []);
 
-  const stop = useCallback(async (workspace: string) => {
+  const stop = useCallback(async (agentId: string) => {
     await fetch(`${API_BASE}/api/chat/stop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workspace }),
+      body: JSON.stringify({ agentId }),
     });
   }, []);
 
-  const newChat = useCallback(async (workspace: string) => {
+  const newChat = useCallback(async (agentId: string) => {
     await fetch(`${API_BASE}/api/chat/new`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workspace }),
+      body: JSON.stringify({ agentId }),
     });
     setMessages([]);
   }, []);
@@ -76,5 +83,17 @@ export function useSSE() {
     setMessages([]);
   }, []);
 
-  return { connected, messages, send, stop, newChat, clearMessages };
+  const answerClarification = useCallback(async (
+    agentId: string,
+    toolUseId: string,
+    answers: Record<string, string>,
+  ) => {
+    await fetch(`${API_BASE}/api/chat/answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId, toolUseId, answers }),
+    });
+  }, []);
+
+  return { connected, messages, send, stop, newChat, clearMessages, answerClarification };
 }
