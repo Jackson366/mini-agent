@@ -13,8 +13,6 @@
 | `buyer-domain` | 买家旅程、转化优化、买家体验 |
 | `seller-domain` | 商家经营链路、工具效率、商家体验 |
 | `service-provider-domain` | 服务商生态、SLA、交付质量 |
-| `ui-expert` | 界面视觉、组件设计、响应式适配 |
-| `ux-expert` | 交互流程、信息架构、可用性 |
 
 ## 工作流程
 
@@ -34,7 +32,6 @@
 ### 委派规则
 - 简单的域内问题：调用单个专家
 - 跨域需求：并行调用多个专家
-- UI/UX 相关：同时调用 `ui-expert` 和 `ux-expert`
 - 所有专家只能读取 workspace，不能修改文件
 
 ## 产物管理
