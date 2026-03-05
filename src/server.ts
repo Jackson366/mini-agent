@@ -65,6 +65,26 @@ export function createAppServer(options: ServerOptions) {
     broadcast({ ...msg, agentId });
   }
 
+  function closeActiveSession(agentId: string, reason: string, options?: { endStream?: boolean; emitIdle?: boolean }) {
+    const session = activeSessions.get(agentId);
+    if (!session) return false;
+
+    for (const pending of session.pendingClarifications.values()) {
+      pending.reject(new Error(reason));
+    }
+    session.pendingClarifications.clear();
+
+    if (options?.endStream !== false && !session.stream.isDone()) {
+      session.stream.end();
+    }
+
+    activeSessions.delete(agentId);
+    if (options?.emitIdle !== false) {
+      broadcast({ type: 'status', status: 'idle', agentId });
+    }
+    return true;
+  }
+
   app.get('/api/chat/stream', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -152,41 +172,24 @@ export function createAppServer(options: ServerOptions) {
       console.error('[sse] Agent error:', errorMsg);
       broadcast({ type: 'error', text: errorMsg, agentId });
     } finally {
-      const session = activeSessions.get(agentId);
-      if (session) {
-        for (const [toolUseId, pending] of session.pendingClarifications.entries()) {
-          pending.reject(new Error(`Session ended before clarification was submitted: ${toolUseId}`));
-        }
-        session.pendingClarifications.clear();
-      }
-      activeSessions.delete(agentId);
-      broadcast({ type: 'status', status: 'idle', agentId });
+      closeActiveSession(
+        agentId,
+        `Session ended before clarification was submitted for agent ${agentId}`,
+        { endStream: false, emitIdle: true },
+      );
     }
   });
 
   app.post('/api/chat/new', (req, res) => {
     const agentId = req.body.agentId || 'main';
-    const session = activeSessions.get(agentId);
-    if (session) {
-      for (const pending of session.pendingClarifications.values()) {
-        pending.reject(new Error(`Session reset by user for agent ${agentId}`));
-      }
-      session.pendingClarifications.clear();
-    }
+    closeActiveSession(agentId, `Session reset by user for agent ${agentId}`);
     deleteSession(agentId);
     res.json({ ok: true });
   });
 
   app.post('/api/chat/stop', (req, res) => {
     const agentId = req.body.agentId || 'main';
-    const session = activeSessions.get(agentId);
-    if (session) {
-      for (const pending of session.pendingClarifications.values()) {
-        pending.reject(new Error(`Session stopped by user for agent ${agentId}`));
-      }
-      session.pendingClarifications.clear();
-      session.stream.end();
-    }
+    closeActiveSession(agentId, `Session stopped by user for agent ${agentId}`);
     res.json({ ok: true });
   });
 

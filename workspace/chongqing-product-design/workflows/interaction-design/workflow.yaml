@@ -1,0 +1,29 @@
+name: "interaction-design"
+description: "UI交互设计工作流"
+author: "Clara"
+
+config_source: "{project-root}/chongqing-product-design/config.yaml"
+output_folder: "{config_source}:output_folder"
+user_name: "{config_source}:user_name"
+communication_language: "{config_source}:communication_language"
+date: system-generated
+
+installed_path: "{project-root}/chongqing-product-design/workflows/interaction-design"
+template: "{installed_path}/template.md"
+instructions: "{installed_path}/instructions.md"
+validation: "{installed_path}/checklist.md"
+
+default_output_file: "{output_folder}/交互设计-{{page_name}}-{{date}}.md"
+
+inputs:
+  - name: "layout_design"
+    description: "布局设计方案"
+    required: false
+  - name: "prd"
+    description: "PRD文档"
+    required: true
+
+data:
+  - "{project-root}/chongqing-product-design/data/通用设计规范知识库.md"
+
+standalone: true

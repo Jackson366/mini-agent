@@ -1,0 +1,29 @@
+id: chongqing-product-design
+name: "重庆电商平台产品设计工具包"
+version: 1.0.0
+description: "基于重庆内外贸统一大市场平台的业务域驱动的需求分析+PRD+UI设计生成工具"
+author: "Clara"
+
+agents:
+  - 需求分析师
+  - 买家域产品专家
+  - 商家域产品专家
+  - 服务商域产品专家
+  - 平台运营域产品专家
+  - UI布局设计师
+  - UI交互设计师
+  - 设计编排器
+
+dependencies:
+  core: ">=4.44.0"
+
+
+custom_agent_location: '{project-root}/chongqing-product-design/agents'
+custom_workflow_location: '{project-root}/chongqing-product-design/workflows'
+custom_module_location: '{project-root}/chongqing-product-design'
+
+# Core Configuration Values
+user_name: Clara
+communication_language: Chinese
+document_output_language: Chinese
+output_folder: '{project-root}/output'

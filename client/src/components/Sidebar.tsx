@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiJson } from '../lib/api';
 
 const API_BASE = import.meta.env.DEV ? 'http://localhost:3210' : '';
 
@@ -20,14 +21,21 @@ export default function Sidebar({
   unreadAgents,
 }: SidebarProps) {
   const [agents, setAgents] = useState<string[]>(['main']);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/agents`)
-      .then(r => r.json())
-      .then(data => {
+    const loadAgents = async () => {
+      try {
+        const data = await apiJson<{ agents?: string[] }>(`${API_BASE}/api/agents`);
         if (data.agents?.length) setAgents(data.agents);
-      })
-      .catch(() => {});
+        setLoadError(null);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load agents';
+        setLoadError(message);
+      }
+    };
+
+    void loadAgents();
   }, []);
 
   return (
@@ -69,6 +77,11 @@ export default function Sidebar({
 
       <div className="px-3 py-4 border-t border-gray-800">
         <p className="text-xs text-gray-500 mb-2 px-3">Agent</p>
+        {loadError && (
+          <p className="text-xs text-red-400 px-3 mb-2 truncate" title={loadError}>
+            {loadError}
+          </p>
+        )}
         <div className="space-y-1">
           {agents.map((id) => (
             <button

@@ -1,0 +1,19 @@
+name: "full-design"
+description: "完整产品设计流程：需求分析→PRD→UI设计"
+author: "Clara"
+
+config_source: "{project-root}/chongqing-product-design/config.yaml"
+output_folder: "{config_source}:output_folder"
+user_name: "{config_source}:user_name"
+communication_language: "{config_source}:communication_language"
+date: system-generated
+feature_name: user-input
+
+installed_path: "{project-root}/chongqing-product-design/workflows/full-design"
+template: "{installed_path}/template.md"
+instructions: "{installed_path}/instructions.md"
+validation: "{installed_path}/checklist.md"
+
+default_output_file: "{output_folder}/{{feature_name}}_设计文档索引.md"
+
+standalone: true

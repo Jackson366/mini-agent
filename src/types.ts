@@ -1,3 +1,5 @@
+import type { AgentDefinition } from "@anthropic-ai/claude-agent-sdk";
+
 export interface AgentInput {
   prompt: string;
   sessionId?: string;
@@ -86,3 +88,7 @@ export interface SseMessageOut {
   toolUseId?: string;
   questions?: ClarificationQuestion[];
 }
+
+export type AgentRegistrySource = {
+  list(): Record<string, AgentDefinition>;
+};

@@ -48,6 +48,7 @@ export default function ChatPanel({ sse, agentId, onUnread }: ChatPanelProps) {
   const thinkingMapRef = useRef<Record<string, boolean>>({});
   const [isSending, setIsSending] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
   const [clarification, setClarification] = useState<ClarificationState | null>(null);
   const [clarificationIndex, setClarificationIndex] = useState(0);
   const [clarificationProgress, setClarificationProgress] = useState<Record<number, ClarificationProgress>>({});
@@ -146,7 +147,10 @@ export default function ChatPanel({ sse, agentId, onUnread }: ChatPanelProps) {
 
     try {
       await sse.send(text, agentId);
-    } catch {
+      setRequestError(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to send message';
+      setRequestError(message);
       setIsSending(false);
     }
 
@@ -238,12 +242,16 @@ export default function ChatPanel({ sse, agentId, onUnread }: ChatPanelProps) {
     setIsSubmittingClarification(true);
     try {
       await sse.answerClarification(agentId, clarification.toolUseId, answers);
+      setRequestError(null);
       clarificationMapRef.current[agentId] = undefined;
       clarificationIndexRef.current[agentId] = undefined;
       clarificationProgressRef.current[agentId] = undefined;
       setClarification(null);
       setClarificationIndex(0);
       setClarificationProgress({});
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to submit clarification';
+      setRequestError(message);
     } finally {
       setIsSubmittingClarification(false);
     }
@@ -254,7 +262,10 @@ export default function ChatPanel({ sse, agentId, onUnread }: ChatPanelProps) {
     setIsStopping(true);
     try {
       await sse.stop(agentId);
-    } catch {
+      setRequestError(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to stop';
+      setRequestError(message);
       setIsStopping(false);
     }
   };
@@ -267,15 +278,21 @@ export default function ChatPanel({ sse, agentId, onUnread }: ChatPanelProps) {
   };
 
   const handleNewChat = async () => {
-    await sse.newChat(agentId);
-    historyMapRef.current[agentId] = [];
-    clarificationMapRef.current[agentId] = undefined;
-    clarificationIndexRef.current[agentId] = undefined;
-    clarificationProgressRef.current[agentId] = undefined;
-    setChatHistory([]);
-    setClarification(null);
-    setClarificationIndex(0);
-    setClarificationProgress({});
+    try {
+      await sse.newChat(agentId);
+      setRequestError(null);
+      historyMapRef.current[agentId] = [];
+      clarificationMapRef.current[agentId] = undefined;
+      clarificationIndexRef.current[agentId] = undefined;
+      clarificationProgressRef.current[agentId] = undefined;
+      setChatHistory([]);
+      setClarification(null);
+      setClarificationIndex(0);
+      setClarificationProgress({});
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to start a new chat';
+      setRequestError(message);
+    }
   };
 
   const sendDisabled = !input.trim() || !sse.connected || isSending || isThinking;
@@ -338,6 +355,9 @@ export default function ChatPanel({ sse, agentId, onUnread }: ChatPanelProps) {
       </div>
 
       <div className="border-t border-gray-800 px-6 py-4">
+        {requestError && (
+          <p className="mb-3 text-sm text-red-400">{requestError}</p>
+        )}
         {clarification && activeQuestion ? (
           <div className={`bg-gray-900 border border-blue-700/50 rounded-2xl p-4 transition-all duration-200 ${clarificationTransitioning ? 'opacity-60 translate-y-1' : 'opacity-100 translate-y-0'}`}>
             <div className="flex items-center justify-between">

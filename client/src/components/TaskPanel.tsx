@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { apiFetch, apiJson } from '../lib/api';
 
 const API_BASE = import.meta.env.DEV ? 'http://localhost:3210' : '';
 
@@ -21,14 +22,16 @@ interface TaskPanelProps {
 export default function TaskPanel({ agentId, active = true }: TaskPanelProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/tasks?agentId=${agentId}`);
-      const data = await res.json();
+      const data = await apiJson<{ tasks?: Task[] }>(`${API_BASE}/api/tasks?agentId=${agentId}`);
       setTasks(data.tasks || []);
+      setError(null);
     } catch (err) {
-      console.error('Failed to fetch tasks:', err);
+      const message = err instanceof Error ? err.message : 'Failed to fetch tasks';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -43,17 +46,27 @@ export default function TaskPanel({ agentId, active = true }: TaskPanelProps) {
 
   const handleToggle = async (task: Task) => {
     const newStatus = task.status === 'active' ? 'paused' : 'active';
-    await fetch(`${API_BASE}/api/tasks/${task.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus }),
-    });
-    fetchTasks();
+    try {
+      await apiFetch(`${API_BASE}/api/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      await fetchTasks();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update task';
+      setError(message);
+    }
   };
 
   const handleDelete = async (taskId: string) => {
-    await fetch(`${API_BASE}/api/tasks/${taskId}`, { method: 'DELETE' });
-    fetchTasks();
+    try {
+      await apiFetch(`${API_BASE}/api/tasks/${taskId}`, { method: 'DELETE' });
+      await fetchTasks();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete task';
+      setError(message);
+    }
   };
 
   const formatTime = (iso: string | null) => {
@@ -69,6 +82,9 @@ export default function TaskPanel({ agentId, active = true }: TaskPanelProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4">
+        {error && (
+          <p className="text-sm text-red-400 mb-3">{error}</p>
+        )}
         {loading ? (
           <p className="text-gray-500">Loading...</p>
         ) : tasks.length === 0 ? (

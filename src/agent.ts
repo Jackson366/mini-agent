@@ -12,6 +12,7 @@ import type {
   ClarificationQuestion,
   RunQueryResult,
 } from './types.js';
+import { AgentRegistry } from './registry.js';
 
 export interface RunAgentOptions {
   input: AgentInput;
@@ -58,29 +59,29 @@ function normalizeClarificationQuestions(input: Record<string, unknown>): Clarif
 }
 
 function loadSubAgents(baseDir: string): Record<string, AgentDefinition> {
-  const agents: Record<string, AgentDefinition> = {};
-  const expertDirs = [
-    'requirement-analyst',
-    'platform-operations',
-    'buyer-domain',
-    'seller-domain',
-    'service-provider-domain',
-    'ui-expert',
-    'ux-expert',
+  // const agents: Record<string, AgentDefinition> = {};
+  // const expertDirs = [
+  //   'requirement-analyst',
+  //   'platform-operations',
+  //   'buyer-domain',
+  //   'seller-domain',
+  //   'service-provider-domain',
+  //   'ui-expert',
+  //   'ux-expert',
 
-  ];
-  for (const id of expertDirs) {
-    const mdPath = path.join(baseDir, id, 'CLAUDE.md');
-    if (fs.existsSync(mdPath)) {
-      agents[id] = {
-        description: fs.readFileSync(mdPath, 'utf-8').split('\n').slice(0, 3).join(' ').replace(/#/g, '').trim(),
-        prompt: fs.readFileSync(mdPath, 'utf-8'),
-        disallowedTools: ['Write', 'Edit'],
-        model: 'inherit',
-      };
-    }
-  }
-  return agents;
+  // ];
+  // for (const id of expertDirs) {
+  //   const mdPath = path.join(baseDir, id, 'CLAUDE.md');
+  //   if (fs.existsSync(mdPath)) {
+  //     agents[id] = {
+  //       description: fs.readFileSync(mdPath, 'utf-8').split('\n').slice(0, 3).join(' ').replace(/#/g, '').trim(),
+  //       prompt: fs.readFileSync(mdPath, 'utf-8'),
+  //       disallowedTools: ['Write', 'Edit'],
+  //       model: 'inherit',
+  //     };
+  //   }
+  // }
+  return new AgentRegistry().list();
 }
 
 export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult> {

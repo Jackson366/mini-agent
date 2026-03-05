@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
+import { apiFetch } from '../lib/api';
 
 export interface SseMessage {
   type: 'assistant' | 'status' | 'error' | 'task_message' | 'session' | 'clarification_request';
@@ -55,7 +56,7 @@ export function useSSE() {
   }, [connect]);
 
   const send = useCallback(async (text: string, agentId: string) => {
-    await fetch(`${API_BASE}/api/chat`, {
+    await apiFetch(`${API_BASE}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, agentId }),
@@ -63,7 +64,7 @@ export function useSSE() {
   }, []);
 
   const stop = useCallback(async (agentId: string) => {
-    await fetch(`${API_BASE}/api/chat/stop`, {
+    await apiFetch(`${API_BASE}/api/chat/stop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agentId }),
@@ -71,7 +72,7 @@ export function useSSE() {
   }, []);
 
   const newChat = useCallback(async (agentId: string) => {
-    await fetch(`${API_BASE}/api/chat/new`, {
+    await apiFetch(`${API_BASE}/api/chat/new`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agentId }),
@@ -88,7 +89,7 @@ export function useSSE() {
     toolUseId: string,
     answers: Record<string, string>,
   ) => {
-    await fetch(`${API_BASE}/api/chat/answer`, {
+    await apiFetch(`${API_BASE}/api/chat/answer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agentId, toolUseId, answers }),
