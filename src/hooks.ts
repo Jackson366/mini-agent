@@ -8,6 +8,7 @@ import {
   parseTranscript,
   sanitizeFilename,
 } from './transcript.js';
+import type { ClarificationOption, ClarificationQuestion } from './types.js';
 
 const SECRET_ENV_VARS = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'];
 
@@ -66,6 +67,65 @@ export function createSanitizeBashHook(): HookCallback {
         updatedInput: {
           ...(preInput.tool_input as Record<string, unknown>),
           command: unsetPrefix + command,
+        },
+      },
+    };
+  };
+}
+
+function normalizeClarificationQuestions(input: Record<string, unknown>): ClarificationQuestion[] {
+  const raw = input.questions;
+  if (!Array.isArray(raw)) return [];
+
+  const result: ClarificationQuestion[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Record<string, unknown>;
+    if (typeof rec.question !== 'string' || typeof rec.header !== 'string' || !Array.isArray(rec.options)) continue;
+
+    const normalizedOptions: ClarificationOption[] = [];
+    for (const opt of rec.options) {
+      if (!opt || typeof opt !== 'object') continue;
+      const o = opt as Record<string, unknown>;
+      if (typeof o.label === 'string' && typeof o.description === 'string') {
+        normalizedOptions.push({ label: o.label, description: o.description });
+      }
+    }
+    if (normalizedOptions.length < 2) continue;
+
+    result.push({
+      question: rec.question,
+      header: rec.header,
+      options: normalizedOptions,
+      multiSelect: rec.multiSelect ? true : undefined,
+    });
+  }
+  return result;
+}
+
+export function createAskUserQuestionHook(
+  onClarification?: (request: {
+    toolUseId: string;
+    questions: ClarificationQuestion[];
+  }) => Promise<Record<string, string>>,
+): HookCallback {
+  return async (input, toolUseId, _context) => {
+    if (!onClarification || !toolUseId) return {};
+
+    const preInput = input as PreToolUseHookInput;
+    const toolInput = preInput.tool_input as Record<string, unknown>;
+
+    const questions = normalizeClarificationQuestions(toolInput);
+    if (questions.length === 0) return {};
+
+    const answers = await onClarification({ toolUseId, questions });
+
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        updatedInput: {
+          ...toolInput,
+          answers,
         },
       },
     };

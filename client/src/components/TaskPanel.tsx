@@ -76,62 +76,83 @@ export default function TaskPanel({ agentId, active = true }: TaskPanelProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b border-gray-800 px-6 py-3 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Scheduled Tasks</h2>
-        <span className="text-sm text-gray-500">{agentId}</span>
+      <div className="border-b border-slate-800/60 px-6 py-3 flex items-center justify-between shrink-0">
+        <h2 className="text-sm font-semibold text-slate-100">Scheduled Tasks</h2>
+        <span className="text-xs text-slate-500 bg-slate-800/60 px-2 py-0.5 rounded-md font-mono">{agentId}</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div className="flex-1 overflow-y-auto px-6 py-5">
         {error && (
-          <p className="text-sm text-red-400 mb-3">{error}</p>
+          <p className="text-xs text-red-400 mb-3 flex items-center gap-1.5">
+            <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="15" y1="9" x2="9" y2="15" />
+              <line x1="9" y1="9" x2="15" y2="15" />
+            </svg>
+            {error}
+          </p>
         )}
         {loading ? (
-          <p className="text-gray-500">Loading...</p>
+          <div className="flex items-center justify-center py-12">
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-dot-bounce" />
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-dot-bounce" style={{ animationDelay: '0.16s' }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-dot-bounce" style={{ animationDelay: '0.32s' }} />
+            </div>
+          </div>
         ) : tasks.length === 0 ? (
-          <div className="text-center text-gray-500 py-12">
-            <p className="text-lg">No scheduled tasks</p>
-            <p className="text-sm mt-2">Ask the agent to schedule a task in chat</p>
+          <div className="text-center py-16">
+            <div className="w-12 h-12 rounded-2xl bg-slate-800/50 flex items-center justify-center mx-auto mb-4">
+              <svg className="w-6 h-6 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+            </div>
+            <p className="text-sm text-slate-500">No scheduled tasks</p>
+            <p className="text-xs text-slate-600 mt-1.5">Ask the agent to schedule a task in chat</p>
           </div>
         ) : (
           <div className="space-y-3">
             {tasks.map((task) => (
               <div
                 key={task.id}
-                className="bg-gray-800 border border-gray-700 rounded-xl p-4"
+                className="bg-slate-800/40 border border-slate-700/40 rounded-xl p-4 animate-fade-in-up"
               >
-                <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-200 truncate">
+                    <p className="text-sm font-medium text-slate-200 truncate leading-relaxed">
                       {task.prompt.slice(0, 100)}
                       {task.prompt.length > 100 ? '...' : ''}
                     </p>
-                    <div className="flex gap-4 mt-2 text-xs text-gray-500">
-                      <span>{task.schedule_type}: {task.schedule_value}</span>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-slate-500">
+                      <span className="font-mono">{task.schedule_type}: {task.schedule_value}</span>
                       <span>Next: {formatTime(task.next_run)}</span>
                       <span>Last: {formatTime(task.last_run)}</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 ml-4">
+                  <div className="flex items-center gap-2 shrink-0">
                     <span
-                      className={`text-xs px-2 py-1 rounded-full ${
+                      className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
                         task.status === 'active'
-                          ? 'bg-green-900/50 text-green-400'
+                          ? 'bg-emerald-950/50 text-emerald-400 border border-emerald-800/30'
                           : task.status === 'paused'
-                            ? 'bg-yellow-900/50 text-yellow-400'
-                            : 'bg-gray-700 text-gray-400'
+                            ? 'bg-amber-950/50 text-amber-400 border border-amber-800/30'
+                            : 'bg-slate-800 text-slate-500 border border-slate-700/50'
                       }`}
                     >
                       {task.status}
                     </span>
                     <button
                       onClick={() => handleToggle(task)}
-                      className="text-xs text-gray-400 hover:text-gray-200 transition"
+                      className="text-xs text-slate-500 hover:text-slate-300 cursor-pointer transition-colors duration-150 px-1.5 py-1 rounded hover:bg-slate-700/30"
                     >
                       {task.status === 'active' ? 'Pause' : 'Resume'}
                     </button>
                     <button
                       onClick={() => handleDelete(task.id)}
-                      className="text-xs text-red-400 hover:text-red-300 transition"
+                      className="text-xs text-red-400/70 hover:text-red-300 cursor-pointer transition-colors duration-150 px-1.5 py-1 rounded hover:bg-red-900/20"
                     >
                       Delete
                     </button>

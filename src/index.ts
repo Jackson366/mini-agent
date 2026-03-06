@@ -26,10 +26,13 @@ const MCP_SERVER_PATH_JS = path.resolve(__dirname, 'mcp-server.js');
 const MCP_SERVER_PATH_TS = path.resolve(__dirname, 'mcp-server.ts');
 const MCP_SERVER_PATH = fs.existsSync(MCP_SERVER_PATH_JS) ? MCP_SERVER_PATH_JS : MCP_SERVER_PATH_TS;
 
-const INTERNAL_AGENTS = new Set([
-  'requirement-analyst', 'platform-operations', 'buyer-domain',
-  'seller-domain', 'service-provider-domain', 'ui-expert', 'ux-expert',
-]);
+const SKILL_SYNC_EXCLUDED_DIRS = new Set(['conversation', 'conversations']);
+const SKILL_SYNC_AGENT_WHITELIST = new Set(
+  (process.env.SKILL_SYNC_AGENT_WHITELIST ?? 'main')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean),
+);
 
 function syncSkills(agentDir: string): void {
   if (!fs.existsSync(SKILLS_SRC)) return;
@@ -65,11 +68,16 @@ const subDirs = fs.readdirSync(WORKSPACE_BASE, { withFileTypes: true })
   .map(e => e.name);
 
 for (const dir of subDirs) {
-  if (!INTERNAL_AGENTS.has(dir)) {
+  if (
+    !SKILL_SYNC_EXCLUDED_DIRS.has(dir) &&
+    SKILL_SYNC_AGENT_WHITELIST.has(dir)
+  ) {
     syncSkills(path.join(WORKSPACE_BASE, dir));
   }
 }
-syncSkills(WORKSPACE_BASE);
+if (SKILL_SYNC_AGENT_WHITELIST.has('main')) {
+  syncSkills(WORKSPACE_BASE);
+}
 
 process.env.HOME = process.env.HOME || '/tmp';
 

@@ -1,18 +1,15 @@
 import fs from 'fs';
 import path from 'path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentDefinition } from '@anthropic-ai/claude-agent-sdk';
 import { MessageStream } from './message-stream.js';
-import { createPreCompactHook, createSanitizeBashHook } from './hooks.js';
-import type { CanUseTool, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
+import { createPreCompactHook, createSanitizeBashHook, createAskUserQuestionHook } from './hooks.js';
+import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk';
 import type {
   AgentInput,
   AgentOutput,
-  ClarificationOption,
   ClarificationQuestion,
   RunQueryResult,
 } from './types.js';
-import { AgentRegistry } from './registry.js';
 
 export interface RunAgentOptions {
   input: AgentInput;
@@ -26,62 +23,6 @@ export interface RunAgentOptions {
     questions: ClarificationQuestion[];
   }) => Promise<Record<string, string>>;
   stream: MessageStream;
-}
-
-function normalizeClarificationQuestions(input: Record<string, unknown>): ClarificationQuestion[] {
-  const raw = input.questions;
-  if (!Array.isArray(raw)) return [];
-
-  const result: ClarificationQuestion[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== 'object') continue;
-    const rec = item as Record<string, unknown>;
-    if (typeof rec.question !== 'string' || typeof rec.header !== 'string' || !Array.isArray(rec.options)) continue;
-
-    const normalizedOptions: ClarificationOption[] = [];
-    for (const opt of rec.options) {
-      if (!opt || typeof opt !== 'object') continue;
-      const o = opt as Record<string, unknown>;
-      if (typeof o.label === 'string' && typeof o.description === 'string') {
-        normalizedOptions.push({ label: o.label, description: o.description });
-      }
-    }
-    if (normalizedOptions.length < 2) continue;
-
-    result.push({
-      question: rec.question,
-      header: rec.header,
-      options: normalizedOptions,
-      multiSelect: rec.multiSelect ? true : undefined,
-    });
-  }
-  return result;
-}
-
-function loadSubAgents(baseDir: string): Record<string, AgentDefinition> {
-  // const agents: Record<string, AgentDefinition> = {};
-  // const expertDirs = [
-  //   'requirement-analyst',
-  //   'platform-operations',
-  //   'buyer-domain',
-  //   'seller-domain',
-  //   'service-provider-domain',
-  //   'ui-expert',
-  //   'ux-expert',
-
-  // ];
-  // for (const id of expertDirs) {
-  //   const mdPath = path.join(baseDir, id, 'CLAUDE.md');
-  //   if (fs.existsSync(mdPath)) {
-  //     agents[id] = {
-  //       description: fs.readFileSync(mdPath, 'utf-8').split('\n').slice(0, 3).join(' ').replace(/#/g, '').trim(),
-  //       prompt: fs.readFileSync(mdPath, 'utf-8'),
-  //       disallowedTools: ['Write', 'Edit'],
-  //       model: 'inherit',
-  //     };
-  //   }
-  // }
-  return new AgentRegistry().list();
 }
 
 export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult> {
@@ -118,8 +59,6 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
     extraDirs.push(globalDir);
   }
 
-  const subAgents = isMainAgent ? loadSubAgents(globalDir) : undefined;
-
   const sdkEnv: Record<string, string | undefined> = { ...process.env };
 
   const mcpEnv: Record<string, string> = {
@@ -134,10 +73,9 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
     systemPrompt: systemPromptAppend
       ? { type: 'preset' as const, preset: 'claude_code' as const, append: systemPromptAppend }
       : undefined,
-    ...(subAgents && Object.keys(subAgents).length > 0 ? { agents: subAgents } : {}),
     allowedTools: [
       'Bash',
-      'Read', 'Write', 'Edit', 'Glob', 'Grep',
+      'Read', 'Write', 'Edit', 'Glob', 'Grep', 'AskUserQuestion',
       'WebSearch', 'WebFetch',
       'Task', 'TaskOutput', 'TaskStop',
       'SendMessage',
@@ -146,29 +84,8 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
       'AskUserQuestion',
       'mcp__nanoclaw__*',
     ],
-    canUseTool: (async (toolName, toolInput, toolOptions) => {
-      if (toolName !== 'AskUserQuestion' || !onClarification) {
-        return { behavior: 'allow' as const, updatedInput: toolInput };
-      }
-
-      const questions = normalizeClarificationQuestions(toolInput);
-      if (questions.length === 0) {
-        return { behavior: 'allow' as const, updatedInput: toolInput };
-      }
-
-      const answers = await onClarification({
-        toolUseId: toolOptions.toolUseID,
-        questions,
-      });
-
-      return {
-        behavior: 'allow' as const,
-        toolUseID: toolOptions.toolUseID,
-        updatedInput: {
-          questions: toolInput.questions,
-          answers,
-        },
-      };
+    canUseTool: (async (_toolName, toolInput, _toolOptions) => {
+      return { behavior: 'allow' as const, updatedInput: toolInput };
     }) satisfies CanUseTool,
     env: {
       ...sdkEnv,
@@ -187,7 +104,10 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
     },
     hooks: {
       PreCompact: [{ hooks: [createPreCompactHook(log, agentDir, input.assistantName)] }],
-      PreToolUse: [{ matcher: 'Bash', hooks: [createSanitizeBashHook()] }],
+      PreToolUse: [
+        { matcher: 'Bash', hooks: [createSanitizeBashHook()] },
+        { matcher: 'AskUserQuestion', hooks: [createAskUserQuestionHook(onClarification)] },
+      ],
     },
   });
 

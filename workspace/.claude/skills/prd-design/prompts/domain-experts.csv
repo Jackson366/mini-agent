@@ -1,0 +1,5 @@
+expert_id,name,domain,role,system_path,prompt_template
+buyer,买家域专家,通用,买家角色,"基于现有买家域功能和数据模型",./experts/expert-buyer.md
+seller,卖家域专家,通用,卖家角色,"基于现有卖家域功能和数据模型",./experts/expert-seller.md
+serviceprovider,服务提供者域专家,通用,服务提供者角色,"基于现有服务提供者域功能和数据模型",./experts/expert-serviceprovider.md
+platformoperator,平台运营域专家,通用,平台运营角色,"基于现有平台运营域功能和数据模型",./experts/expert-platformoperator.md
