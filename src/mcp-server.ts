@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { CronExpressionParser } from 'cron-parser';
 import path from 'path';
 import fs from 'fs';
+import { AgentRegistry } from './registry.js';
 import {
   createTask,
   getAllTasks,
@@ -13,6 +14,66 @@ import {
 
 const agentId = process.env.MINI_AGENT_ID || 'main';
 const dataDir = process.env.MINI_AGENT_DATA_DIR || path.resolve(process.cwd(), 'data');
+const cwd = process.cwd();
+
+function resolveWorkspaceRoot(startDir: string): string {
+  let current = path.resolve(startDir);
+  while (true) {
+    const marker = path.join(current, 'chongqing-product-design', 'config.yaml');
+    if (fs.existsSync(marker)) return current;
+    const parent = path.dirname(current);
+    if (parent === current) return path.resolve(startDir);
+    current = parent;
+  }
+}
+
+function slugify(value: string): string {
+  const ascii = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (ascii) return ascii;
+  return `domain-${Date.now().toString(36)}`;
+}
+
+function buildGeneratedExpertPrompt(args: {
+  name: string;
+  description: string;
+  capabilities: string[];
+  keywords: string[];
+  knowledgePoints: string[];
+}): string {
+  const caps = args.capabilities.map((c) => `- ${c}`).join('\n');
+  const kws = args.keywords.map((k) => `- ${k}`).join('\n');
+  const points = args.knowledgePoints.length > 0
+    ? args.knowledgePoints.map((p) => `- ${p}`).join('\n')
+    : '- 待补充';
+
+  return `---
+name: ${args.name}
+description: ${args.description}
+---
+
+你是${args.name}，负责该业务域PRD内容优化与治理。
+
+## 专业能力
+${caps}
+
+## 关键词
+${kws}
+
+## 域知识
+${points}
+
+## 工作要求
+1. 基于当前PRD最新版本进行增量修订，不回退旧版本。
+2. 明确输出：修改建议、修改原因、影响范围、验收要点。
+3. 与其他专家冲突时，先暴露分歧并给出权衡建议。
+4. 输出中文，结论可执行可追溯。`;
+}
+
+const workspaceRoot = resolveWorkspaceRoot(cwd);
+const registry = new AgentRegistry({ workspaceDir: workspaceRoot });
 
 initDatabase(dataDir);
 
@@ -41,6 +102,95 @@ server.tool(
     }));
     fs.renameSync(tempPath, filepath);
     return { content: [{ type: 'text' as const, text: 'Message sent.' }] };
+  },
+);
+
+server.tool(
+  'route_experts',
+  'Route requirement text to domain experts by capabilities and keywords. Use this before delegating PRD optimization tasks.',
+  {
+    requirement_text: z.string().default(''),
+    capabilities: z.array(z.string()).optional(),
+    top_n: z.number().int().positive().max(20).default(6),
+  },
+  async (args) => {
+    registry.reload();
+    const routed = registry.routeExperts({
+      text: args.requirement_text,
+      capabilities: args.capabilities,
+      topN: args.top_n,
+    });
+    const matchedText = routed.matched.length > 0
+      ? routed.matched
+        .map((m, i) => `${i + 1}. ${m.id} (score=${m.score}; ${m.reasons.join('; ')})`)
+        .join('\n')
+      : 'none';
+    const missingText = routed.missingCapabilities.length > 0
+      ? routed.missingCapabilities.join(', ')
+      : 'none';
+
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `matched_experts:\n${matchedText}\n\nmissing_capabilities:\n${missingText}`,
+      }],
+    };
+  },
+);
+
+server.tool(
+  'upsert_domain_expert',
+  'Create or update a missing domain expert after collecting domain knowledge from user, then write it into agents-registry.yaml for immediate reuse.',
+  {
+    domain_name: z.string().min(1),
+    domain_description: z.string().min(1),
+    capabilities: z.array(z.string().min(1)).min(1),
+    keywords: z.array(z.string().min(1)).default([]),
+    knowledge_points: z.array(z.string().min(1)).default([]),
+    expert_id: z.string().min(1).optional(),
+  },
+  async (args) => {
+    const expertId = args.expert_id ? slugify(args.expert_id) : `${slugify(args.domain_name)}-expert`;
+    const generatedDir = path.join(
+      workspaceRoot,
+      'chongqing-product-design',
+      'agents',
+      'generated',
+    );
+    fs.mkdirSync(generatedDir, { recursive: true });
+    const fileName = `${expertId}.md`;
+    const filePath = path.join(generatedDir, fileName);
+    const promptPath = `@chongqing-product-design/agents/generated/${fileName}`;
+
+    const content = buildGeneratedExpertPrompt({
+      name: args.domain_name,
+      description: args.domain_description,
+      capabilities: args.capabilities,
+      keywords: args.keywords,
+      knowledgePoints: args.knowledge_points,
+    });
+    fs.writeFileSync(filePath, content, 'utf-8');
+
+    registry.upsertAgent({
+      id: expertId,
+      name: args.domain_name,
+      description: args.domain_description,
+      prompt_path: promptPath,
+      model: 'sonnet',
+      tools: ['Read', 'Grep', 'Glob', 'Write', 'Edit'],
+      capabilities: args.capabilities,
+      keywords: args.keywords,
+      priority: 85,
+      enabled: true,
+      expert: true,
+    });
+
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `domain expert upserted: ${expertId}\nfile: ${filePath}\nregistry: ${path.join(workspaceRoot, 'chongqing-product-design', 'agents-registry.yaml')}`,
+      }],
+    };
   },
 );
 

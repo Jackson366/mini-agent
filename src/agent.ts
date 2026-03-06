@@ -81,7 +81,7 @@ function loadSubAgents(baseDir: string): Record<string, AgentDefinition> {
   //     };
   //   }
   // }
-  return new AgentRegistry().list();
+  return new AgentRegistry({ workspaceDir: baseDir }).list();
 }
 
 export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult> {

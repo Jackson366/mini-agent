@@ -89,6 +89,49 @@ export interface SseMessageOut {
   questions?: ClarificationQuestion[];
 }
 
+export interface ExpertMetadata {
+  id: string;
+  description: string;
+  capabilities: string[];
+  keywords: string[];
+  priority: number;
+  enabled: boolean;
+  expert: boolean;
+  promptPath: string;
+}
+
+export interface AgentRouteMatch {
+  id: string;
+  score: number;
+  reasons: string[];
+  capabilities: string[];
+  keywords: string[];
+}
+
+export interface AgentRoutingRequest {
+  text?: string;
+  capabilities?: string[];
+  topN?: number;
+}
+
+export interface RegistryAgentInput {
+  id: string;
+  name?: string;
+  description: string;
+  prompt_path: string;
+  model?: string;
+  tools?: string[];
+  capabilities?: string[];
+  keywords?: string[];
+  priority?: number;
+  enabled?: boolean;
+  expert?: boolean;
+}
+
 export type AgentRegistrySource = {
   list(): Record<string, AgentDefinition>;
+  listMetadata(): ExpertMetadata[];
+  getExpertIds(): string[];
+  routeExperts(input: AgentRoutingRequest): { matched: AgentRouteMatch[]; missingCapabilities: string[] };
+  upsertAgent(agent: RegistryAgentInput): void;
 };

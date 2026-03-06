@@ -1,0 +1,97 @@
+{
+  "version": "1.0.0",
+  "default_model": "sonnet",
+  "agents": [
+    {
+      "id": "requirements-analyst",
+      "name": "需求分析师",
+      "description": "需求分析师，负责与用户沟通澄清需求、分析需求边界，输出结构化的需求分析报告。",
+      "prompt_path": "@chongqing-product-design/agents/requirements-analyst.md",
+      "model": "sonnet",
+      "tools": ["Read", "Grep", "Glob", "Write", "Edit"],
+      "capabilities": ["requirement", "analysis", "governance"],
+      "keywords": ["需求", "分析", "优先级", "边界", "验收", "分歧"],
+      "priority": 100,
+      "enabled": false,
+      "expert": true
+    },
+    {
+      "id": "buyer-expert",
+      "name": "买家域产品专家",
+      "description": "买家域PRD专家，负责买家域相关业务的PRD文档编写。",
+      "prompt_path": "@chongqing-product-design/agents/buyer-expert.md",
+      "model": "sonnet",
+      "tools": ["Read", "Grep", "Glob", "Write", "Edit"],
+      "capabilities": ["buyer", "consumer"],
+      "keywords": ["买家", "下单", "支付", "询价", "售后", "用户"],
+      "priority": 90,
+      "enabled": true,
+      "expert": true
+    },
+    {
+      "id": "seller-expert",
+      "name": "商家域产品专家",
+      "description": "卖家域PRD专家，负责卖家域相关业务的PRD文档编写。",
+      "prompt_path": "@chongqing-product-design/agents/seller-expert.md",
+      "model": "sonnet",
+      "tools": ["Read", "Grep", "Glob", "Write", "Edit"],
+      "capabilities": ["seller", "merchant"],
+      "keywords": ["卖家", "商家", "店铺", "商品", "入驻", "经营"],
+      "priority": 90,
+      "enabled": true,
+      "expert": true
+    },
+    {
+      "id": "service-provider-expert",
+      "name": "服务商域产品专家",
+      "description": "服务商域PRD专家，负责服务商相关业务的PRD文档编写。",
+      "prompt_path": "@chongqing-product-design/agents/service-provider-expert.md",
+      "model": "sonnet",
+      "tools": ["Read", "Grep", "Glob", "Write", "Edit"],
+      "capabilities": ["service-provider", "provider"],
+      "keywords": ["服务商", "服务产品", "服务咨询", "SLA", "服务订单"],
+      "priority": 90,
+      "enabled": true,
+      "expert": true
+    },
+    {
+      "id": "platform-operation-expert",
+      "name": "平台运营域产品专家",
+      "description": "平台运营域PRD专家，负责平台运营相关业务的PRD文档编写。",
+      "prompt_path": "@chongqing-product-design/agents/platform-operation-expert.md",
+      "model": "sonnet",
+      "tools": ["Read", "Grep", "Glob", "Write", "Edit"],
+      "capabilities": ["platform-ops", "operation"],
+      "keywords": ["运营", "管理后台", "审核", "配置", "策略", "平台"],
+      "priority": 90,
+      "enabled": true,
+      "expert": true
+    },
+    {
+      "id": "ux-designer",
+      "name": "UI交互设计师",
+      "description": "交互与信息架构设计专家，负责交互与信息架构的PRD文档编写。",
+      "prompt_path": "@chongqing-product-design/agents/ux-designer.md",
+      "model": "sonnet",
+      "tools": ["Read", "Grep", "Glob", "Write", "Edit"],
+      "capabilities": ["ux", "interaction", "ia"],
+      "keywords": ["交互", "流程", "信息架构", "可用性", "动线"],
+      "priority": 40,
+      "enabled": true,
+      "expert": true
+    },
+    {
+      "id": "ui-designer",
+      "name": "UI布局设计师",
+      "description": "UI设计专家，负责UI界面的PRD文档编写。",
+      "prompt_path": "@chongqing-product-design/agents/ui-designer.md",
+      "model": "sonnet",
+      "tools": ["Read", "Grep", "Glob", "Write", "Edit"],
+      "capabilities": ["ui", "visual-design"],
+      "keywords": ["界面", "视觉", "组件", "设计规范", "样式"],
+      "priority": 35,
+      "enabled": true,
+      "expert": true
+    }
+  ]
+}
