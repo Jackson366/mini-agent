@@ -1,11 +1,15 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { SseMessage } from '../hooks/useSSE';
+import { apiJson } from '../lib/api';
+import type { SseMessage, RelatedFile } from '../hooks/useSSE';
+
+const API_BASE = import.meta.env.DEV ? 'http://localhost:3210' : '';
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'error' | 'task';
   content: string;
+  files?: RelatedFile[];
 }
 
 interface ChatPanelProps {
@@ -20,6 +24,8 @@ interface ChatPanelProps {
   };
   agentId: string;
   onUnread?: (id: string) => void;
+  onOpenPreview?: (filePath: string) => void;
+  onOpenHistory?: () => void;
 }
 
 interface ClarificationQuestion {
@@ -40,7 +46,7 @@ interface ClarificationProgress {
   customText: string;
 }
 
-export default function ChatPanel({ sse, agentId, onUnread }: ChatPanelProps) {
+export default function ChatPanel({ sse, agentId, onUnread, onOpenPreview, onOpenHistory }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const historyMapRef = useRef<Record<string, ChatMessage[]>>({});
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
@@ -62,7 +68,42 @@ export default function ChatPanel({ sse, agentId, onUnread }: ChatPanelProps) {
   const processedCount = useRef(0);
   const agentIdRef = useRef(agentId);
   const isComposingRef = useRef(false);
+  const [fileBrowserOpen, setFileBrowserOpen] = useState(false);
+  const [fileBrowserList, setFileBrowserList] = useState<RelatedFile[]>([]);
+  const [fileBrowserLoading, setFileBrowserLoading] = useState(false);
+  const fileBrowserRef = useRef<HTMLDivElement>(null);
   agentIdRef.current = agentId;
+
+  const loadFileBrowser = useCallback(async () => {
+    setFileBrowserLoading(true);
+    try {
+      const data = await apiJson<{ files: RelatedFile[] }>(`${API_BASE}/api/files/list?agentId=${agentId}`);
+      setFileBrowserList(data.files || []);
+    } catch {
+      setFileBrowserList([]);
+    } finally {
+      setFileBrowserLoading(false);
+    }
+  }, [agentId]);
+
+  const toggleFileBrowser = useCallback(() => {
+    if (!fileBrowserOpen) {
+      loadFileBrowser();
+    }
+    setFileBrowserOpen(prev => !prev);
+  }, [fileBrowserOpen, loadFileBrowser]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (fileBrowserRef.current && !fileBrowserRef.current.contains(e.target as Node)) {
+        setFileBrowserOpen(false);
+      }
+    };
+    if (fileBrowserOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [fileBrowserOpen]);
 
   useEffect(() => {
     setChatHistory(historyMapRef.current[agentId] || []);
@@ -115,6 +156,18 @@ export default function ChatPanel({ sse, agentId, onUnread }: ChatPanelProps) {
           setIsThinking(thinking);
           if (thinking) setIsSending(false);
           if (!thinking) setIsStopping(false);
+        }
+      } else if (msg.type === 'related_files' && msg.files && msg.files.length > 0) {
+        const history = historyMapRef.current[msgAgent];
+        if (history && history.length > 0) {
+          const lastIdx = history.length - 1;
+          if (history[lastIdx].role === 'assistant') {
+            history[lastIdx] = { ...history[lastIdx], files: msg.files };
+            historyMapRef.current[msgAgent] = [...history];
+            if (msgAgent === currentAgent) {
+              setChatHistory([...historyMapRef.current[msgAgent]]);
+            }
+          }
         }
       } else if (msg.type === 'clarification_request' && msg.toolUseId && msg.questions && msg.questions.length > 0) {
         const nextClarification: ClarificationState = { toolUseId: msg.toolUseId, questions: msg.questions };
@@ -318,17 +371,79 @@ export default function ChatPanel({ sse, agentId, onUnread }: ChatPanelProps) {
           <h2 className="text-sm font-semibold text-slate-100">Chat</h2>
           <span className="text-xs text-slate-500 bg-slate-800/60 px-2 py-0.5 rounded-md font-mono">{agentId}</span>
         </div>
-        <button
-          onClick={handleNewChat}
-          disabled={isThinking}
-          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-150 cursor-pointer px-2.5 py-1.5 rounded-lg hover:bg-slate-800/50"
-        >
-          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-          New Chat
-        </button>
+        <div className="flex items-center gap-1">
+          <div className="relative" ref={fileBrowserRef}>
+            <button
+              onClick={toggleFileBrowser}
+              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors duration-150 cursor-pointer px-2.5 py-1.5 rounded-lg hover:bg-slate-800/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+              title="Browse workspace files"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+              </svg>
+              Files
+            </button>
+            {fileBrowserOpen && (
+              <div className="absolute right-0 top-full mt-1 w-72 max-h-80 bg-slate-900 border border-slate-700/60 rounded-xl shadow-xl overflow-hidden z-40 animate-fade-in-up">
+                <div className="px-3 py-2 border-b border-slate-800/60 text-[11px] text-slate-500 uppercase tracking-wider font-medium">
+                  Workspace Files
+                </div>
+                <div className="overflow-y-auto max-h-64">
+                  {fileBrowserLoading ? (
+                    <div className="flex items-center justify-center py-6">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-dot-bounce" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-dot-bounce" style={{ animationDelay: '0.16s' }} />
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-dot-bounce" style={{ animationDelay: '0.32s' }} />
+                      </div>
+                    </div>
+                  ) : fileBrowserList.length === 0 ? (
+                    <p className="text-xs text-slate-500 text-center py-6">No files found</p>
+                  ) : (
+                    fileBrowserList.map((f) => (
+                      <button
+                        key={f.path}
+                        onClick={() => {
+                          onOpenPreview?.(f.path);
+                          setFileBrowserOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-800/60 hover:text-slate-100 cursor-pointer transition-colors duration-150 flex items-center gap-2 border-b border-slate-800/30 last:border-0 focus:outline-none focus:bg-slate-800/60"
+                      >
+                        <svg className="w-3 h-3 text-slate-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                        <span className="font-mono truncate">{f.path}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => onOpenHistory?.()}
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors duration-150 cursor-pointer px-2.5 py-1.5 rounded-lg hover:bg-slate-800/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+            title="Version history & rollback"
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            History
+          </button>
+          <button
+            onClick={handleNewChat}
+            disabled={isThinking}
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-150 cursor-pointer px-2.5 py-1.5 rounded-lg hover:bg-slate-800/50"
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            New Chat
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -365,9 +480,29 @@ export default function ChatPanel({ sse, agentId, onUnread }: ChatPanelProps) {
                 {msg.role === 'user' ? (
                   <p className="whitespace-pre-wrap text-[0.9375rem] leading-relaxed">{msg.content}</p>
                 ) : (
-                  <div className="markdown-body prose prose-invert prose-sm max-w-none">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                  </div>
+                  <>
+                    <div className="markdown-body prose prose-invert prose-sm max-w-none">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                    </div>
+                    {msg.files && msg.files.length > 0 && (
+                      <div className="mt-2.5 pt-2.5 border-t border-slate-700/30 flex flex-wrap gap-1.5">
+                        {msg.files.map((f) => (
+                          <button
+                            key={f.path}
+                            onClick={() => onOpenPreview?.(f.path)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-700/40 hover:bg-slate-700/70 text-xs text-slate-300 hover:text-slate-100 cursor-pointer transition-colors duration-150 border border-slate-600/30 hover:border-slate-500/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                            title={`Preview ${f.path}`}
+                          >
+                            <svg className="w-3 h-3 text-slate-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                              <polyline points="14 2 14 8 20 8" />
+                            </svg>
+                            <span className="font-mono truncate max-w-[180px]">{f.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>

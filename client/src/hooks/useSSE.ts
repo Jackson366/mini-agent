@@ -1,8 +1,22 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { apiFetch } from '../lib/api';
 
+export interface RelatedFile {
+  path: string;
+  name: string;
+  language?: string;
+}
+
+export interface CheckpointData {
+  id: string;
+  checkpointId: string;
+  turnIndex: number;
+  description: string;
+  createdAt: string;
+}
+
 export interface SseMessage {
-  type: 'assistant' | 'status' | 'error' | 'task_message' | 'session' | 'clarification_request';
+  type: 'assistant' | 'status' | 'error' | 'task_message' | 'session' | 'clarification_request' | 'related_files' | 'checkpoint_created';
   text?: string;
   status?: string;
   sessionId?: string;
@@ -15,6 +29,8 @@ export interface SseMessage {
     multiSelect?: boolean;
     options: Array<{ label: string; description: string }>;
   }>;
+  files?: RelatedFile[];
+  checkpoint?: CheckpointData;
 }
 
 const API_BASE = import.meta.env.DEV ? 'http://localhost:3210' : '';

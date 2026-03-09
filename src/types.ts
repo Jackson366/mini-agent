@@ -13,6 +13,7 @@ export interface AgentOutput {
   result: string | null;
   newSessionId?: string;
   error?: string;
+  checkpoint?: CheckpointInfo;
 }
 
 export interface ClarificationOption {
@@ -76,10 +77,28 @@ export interface SessionEntry {
 export interface RunQueryResult {
   newSessionId?: string;
   lastAssistantUuid?: string;
+  checkpoints?: CheckpointInfo[];
+}
+
+export interface CheckpointInfo {
+  checkpointId: string;
+  sessionId: string;
+  turnIndex: number;
+  timestamp: string;
+}
+
+export interface CheckpointRecord {
+  id: string;
+  agent_id: string;
+  session_id: string;
+  checkpoint_id: string;
+  turn_index: number;
+  description: string;
+  created_at: string;
 }
 
 export interface SseMessageOut {
-  type: 'assistant' | 'status' | 'error' | 'task_message' | 'session' | 'clarification_request';
+  type: 'assistant' | 'status' | 'error' | 'task_message' | 'session' | 'clarification_request' | 'related_files' | 'checkpoint_created';
   text?: string;
   status?: string;
   sessionId?: string;
@@ -87,6 +106,23 @@ export interface SseMessageOut {
   agentId?: string;
   toolUseId?: string;
   questions?: ClarificationQuestion[];
+  files?: RelatedFile[];
+  checkpoint?: { id: string; checkpointId: string; turnIndex: number; description: string; createdAt: string };
+}
+
+export interface RelatedFile {
+  path: string;
+  name: string;
+  language?: string;
+}
+
+export interface FilePreviewResponse {
+  path: string;
+  name: string;
+  content: string;
+  language: string;
+  size: number;
+  truncated: boolean;
 }
 
 export type AgentRegistrySource = {
