@@ -1,43 +1,14 @@
-import { useState, useEffect } from 'react';
-import { apiJson } from '../lib/api';
-
-const API_BASE = import.meta.env.DEV ? 'http://localhost:3210' : '';
-
 interface SidebarProps {
-  agentId: string;
-  onAgentChange: (id: string) => void;
   view: 'chat' | 'tasks';
   onViewChange: (view: 'chat' | 'tasks') => void;
   connected: boolean;
-  unreadAgents?: Set<string>;
 }
 
 export default function Sidebar({
-  agentId,
-  onAgentChange,
   view,
   onViewChange,
   connected,
-  unreadAgents,
 }: SidebarProps) {
-  const [agents, setAgents] = useState<string[]>(['main']);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const loadAgents = async () => {
-      try {
-        const data = await apiJson<{ agents?: string[] }>(`${API_BASE}/api/agents`);
-        if (data.agents?.length) setAgents(data.agents);
-        setLoadError(null);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to load agents';
-        setLoadError(message);
-      }
-    };
-
-    void loadAgents();
-  }, []);
-
   return (
     <div className="w-60 bg-slate-900/80 border-r border-slate-800/60 flex flex-col backdrop-blur-sm">
       <div className="px-5 py-5 border-b border-slate-800/60">
@@ -90,35 +61,6 @@ export default function Sidebar({
           Tasks
         </button>
       </nav>
-
-      <div className="flex-1" />
-
-      <div className="px-3 py-4 border-t border-slate-800/60">
-        <p className="text-[11px] uppercase tracking-wider text-slate-600 mb-2 px-3 font-medium">Agents</p>
-        {loadError && (
-          <p className="text-xs text-red-400 px-3 mb-2 truncate" title={loadError}>
-            {loadError}
-          </p>
-        )}
-        <div className="space-y-0.5">
-          {agents.map((id) => (
-            <button
-              key={id}
-              onClick={() => onAgentChange(id)}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm cursor-pointer transition-colors duration-150 flex items-center justify-between ${
-                agentId === id
-                  ? 'bg-indigo-500/10 text-indigo-400 font-medium'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
-              }`}
-            >
-              <span className="truncate">{id}</span>
-              {unreadAgents?.has(id) && agentId !== id && (
-                <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse shrink-0" />
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

@@ -1,4 +1,3 @@
-import type { AgentDefinition } from "@anthropic-ai/claude-agent-sdk";
 
 export interface AgentInput {
   prompt: string;
@@ -13,7 +12,6 @@ export interface AgentOutput {
   result: string | null;
   newSessionId?: string;
   error?: string;
-  checkpoint?: CheckpointInfo;
 }
 
 export interface ClarificationOption {
@@ -77,28 +75,34 @@ export interface SessionEntry {
 export interface RunQueryResult {
   newSessionId?: string;
   lastAssistantUuid?: string;
-  checkpoints?: CheckpointInfo[];
 }
 
-export interface CheckpointInfo {
-  checkpointId: string;
-  sessionId: string;
-  turnIndex: number;
+export interface StreamDelta {
+  event: 'delta' | 'end';
+  text?: string;
+}
+
+export interface FileDiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: string[];
+}
+
+export interface FileDiffInfo {
+  filePath: string;
+  fileName: string;
+  language?: string;
+  diffType: 'create' | 'update' | 'edit';
+  additions: number;
+  deletions: number;
+  hunks: FileDiffHunk[];
   timestamp: string;
 }
 
-export interface CheckpointRecord {
-  id: string;
-  agent_id: string;
-  session_id: string;
-  checkpoint_id: string;
-  turn_index: number;
-  description: string;
-  created_at: string;
-}
-
 export interface SseMessageOut {
-  type: 'assistant' | 'status' | 'error' | 'task_message' | 'session' | 'clarification_request' | 'related_files' | 'checkpoint_created';
+  type: 'assistant' | 'assistant_delta' | 'assistant_end' | 'status' | 'error' | 'task_message' | 'session' | 'clarification_request' | 'related_files' | 'file_diff';
   text?: string;
   status?: string;
   sessionId?: string;
@@ -107,7 +111,7 @@ export interface SseMessageOut {
   toolUseId?: string;
   questions?: ClarificationQuestion[];
   files?: RelatedFile[];
-  checkpoint?: { id: string; checkpointId: string; turnIndex: number; description: string; createdAt: string };
+  diff?: FileDiffInfo;
 }
 
 export interface RelatedFile {
@@ -124,7 +128,3 @@ export interface FilePreviewResponse {
   size: number;
   truncated: boolean;
 }
-
-export type AgentRegistrySource = {
-  list(): Record<string, AgentDefinition>;
-};

@@ -7,16 +7,27 @@ export interface RelatedFile {
   language?: string;
 }
 
-export interface CheckpointData {
-  id: string;
-  checkpointId: string;
-  turnIndex: number;
-  description: string;
-  createdAt: string;
+export interface FileDiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: string[];
+}
+
+export interface FileDiffInfo {
+  filePath: string;
+  fileName: string;
+  language?: string;
+  diffType: 'create' | 'update' | 'edit';
+  additions: number;
+  deletions: number;
+  hunks: FileDiffHunk[];
+  timestamp: string;
 }
 
 export interface SseMessage {
-  type: 'assistant' | 'status' | 'error' | 'task_message' | 'session' | 'clarification_request' | 'related_files' | 'checkpoint_created';
+  type: 'assistant' | 'assistant_delta' | 'assistant_end' | 'status' | 'error' | 'task_message' | 'session' | 'clarification_request' | 'related_files' | 'file_diff';
   text?: string;
   status?: string;
   sessionId?: string;
@@ -30,7 +41,7 @@ export interface SseMessage {
     options: Array<{ label: string; description: string }>;
   }>;
   files?: RelatedFile[];
-  checkpoint?: CheckpointData;
+  diff?: FileDiffInfo;
 }
 
 const API_BASE = import.meta.env.DEV ? 'http://localhost:3210' : '';

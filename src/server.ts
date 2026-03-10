@@ -5,16 +5,10 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { runAgent } from './agent.js';
 import { MessageStream } from './message-stream.js';
-import { query } from '@anthropic-ai/claude-agent-sdk';
-import { setSession, getSession, deleteSession, getAllTasks, getTasksForAgent, deleteTask, updateTask, saveCheckpoint, getCheckpoints, getCheckpointById, deleteCheckpointsAfter } from './db.js';
-import type { AgentOutput, ClarificationQuestion, SseMessageOut, CheckpointInfo } from './types.js';
+import { setSession, getSession, deleteSession, getAllTasks, getTasksForAgent, deleteTask, updateTask } from './db.js';
+import type { AgentOutput, ClarificationQuestion, SseMessageOut, StreamDelta } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-const INTERNAL_AGENTS = new Set([
-  'requirement-analyst', 'platform-operations', 'buyer-domain',
-  'seller-domain', 'service-provider-domain', 'ui-expert', 'ux-expert',
-]);
 
 export interface ServerOptions {
   port: number;
@@ -109,10 +103,70 @@ export function createAppServer(options: ServerOptions) {
     }
 
     activeSessions.delete(agentId);
+    streamingStates.delete(agentId);
     if (options?.emitIdle !== false) {
       broadcast({ type: 'status', status: 'idle', agentId });
     }
     return true;
+  }
+
+  // --- Streaming state machine for <internal> tag filtering ---
+  interface StreamingState {
+    buffer: string;
+    insideInternal: boolean;
+  }
+  const streamingStates = new Map<string, StreamingState>();
+
+  function longestSuffix(text: string, tag: string): string {
+    for (let i = Math.min(text.length, tag.length); i >= 1; i--) {
+      if (text.endsWith(tag.slice(0, i))) return tag.slice(0, i);
+    }
+    return '';
+  }
+
+  function processStreamDelta(agentId: string, text: string): string[] {
+    let state = streamingStates.get(agentId);
+    if (!state) {
+      state = { buffer: '', insideInternal: false };
+      streamingStates.set(agentId, state);
+    }
+    state.buffer += text;
+    const output: string[] = [];
+
+    while (state.buffer.length > 0) {
+      if (state.insideInternal) {
+        const closeIdx = state.buffer.indexOf('</internal>');
+        if (closeIdx !== -1) {
+          state.buffer = state.buffer.slice(closeIdx + '</internal>'.length);
+          state.insideInternal = false;
+        } else {
+          state.buffer = longestSuffix(state.buffer, '</internal>');
+          break;
+        }
+      } else {
+        const openIdx = state.buffer.indexOf('<internal>');
+        if (openIdx !== -1) {
+          if (openIdx > 0) output.push(state.buffer.slice(0, openIdx));
+          state.buffer = state.buffer.slice(openIdx + '<internal>'.length);
+          state.insideInternal = true;
+        } else {
+          const partial = longestSuffix(state.buffer, '<internal>');
+          const safeLen = state.buffer.length - partial.length;
+          if (safeLen > 0) output.push(state.buffer.slice(0, safeLen));
+          state.buffer = partial;
+          break;
+        }
+      }
+    }
+    return output;
+  }
+
+  function flushStreamingState(agentId: string): string {
+    const state = streamingStates.get(agentId);
+    if (!state) return '';
+    const remaining = state.insideInternal ? '' : state.buffer;
+    streamingStates.delete(agentId);
+    return remaining;
   }
 
   app.get('/api/chat/stream', (req, res) => {
@@ -160,8 +214,10 @@ export function createAppServer(options: ServerOptions) {
     res.json({ ok: true });
 
     const sessionId = getSession(agentId);
+    console.log(`[Chat] agentId=${agentId}, existing sessionId=${sessionId}`);
 
     try {
+      let streamedThisTurn = false;
       const result = await runAgent({
         input: { prompt: text, sessionId, agentId },
         agentDir,
@@ -175,7 +231,10 @@ export function createAppServer(options: ServerOptions) {
           if (output.result) {
             const cleaned = output.result.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
             if (cleaned) {
-              broadcastTo(agentId, { type: 'assistant', text: cleaned });
+              // Only broadcast full assistant text if streaming didn't deliver it
+              if (!streamingStates.has(agentId) && !streamedThisTurn) {
+                broadcastTo(agentId, { type: 'assistant', text: cleaned });
+              }
 
               const fileRefs = extractRelatedFiles(cleaned, agentDir);
               if (fileRefs.length > 0) {
@@ -183,22 +242,6 @@ export function createAppServer(options: ServerOptions) {
               }
             }
           }
-        },
-        onCheckpoint: (cp: CheckpointInfo) => {
-          const id = `cp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          saveCheckpoint({
-            id,
-            agent_id: agentId,
-            session_id: cp.sessionId,
-            checkpoint_id: cp.checkpointId,
-            turn_index: cp.turnIndex,
-            description: `Turn ${cp.turnIndex}`,
-            created_at: cp.timestamp,
-          });
-          broadcastTo(agentId, {
-            type: 'checkpoint_created',
-            checkpoint: { id, checkpointId: cp.checkpointId, turnIndex: cp.turnIndex, description: `Turn ${cp.turnIndex}`, createdAt: cp.timestamp },
-          });
         },
         onClarification: ({ toolUseId, questions }) => {
           return new Promise<Record<string, string>>((resolve, reject) => {
@@ -210,6 +253,24 @@ export function createAppServer(options: ServerOptions) {
             session.pendingClarifications.set(toolUseId, { questions, resolve, reject });
             broadcastTo(agentId, { type: 'clarification_request', toolUseId, questions });
           });
+        },
+        onStreamDelta: (delta: StreamDelta) => {
+          if (delta.event === 'delta' && delta.text) {
+            streamedThisTurn = true;
+            const chunks = processStreamDelta(agentId, delta.text);
+            for (const chunk of chunks) {
+              if (chunk) broadcastTo(agentId, { type: 'assistant_delta', text: chunk });
+            }
+          } else if (delta.event === 'end') {
+            const remaining = flushStreamingState(agentId);
+            if (remaining) {
+              broadcastTo(agentId, { type: 'assistant_delta', text: remaining });
+            }
+            broadcastTo(agentId, { type: 'assistant_end' });
+          }
+        },
+        onFileDiff: (diff) => {
+          broadcastTo(agentId, { type: 'file_diff', diff });
         },
         stream,
       });
@@ -275,81 +336,6 @@ export function createAppServer(options: ServerOptions) {
     session.pendingClarifications.delete(toolUseId);
     pending.resolve(answers);
     res.json({ ok: true });
-  });
-
-  app.get('/api/checkpoints', (req, res) => {
-    const agentId = (req.query.agentId as string) || 'main';
-    const records = getCheckpoints(agentId);
-    res.json({ checkpoints: records });
-  });
-
-  app.post('/api/checkpoints/rewind', async (req, res) => {
-    const { agentId: reqAgent, checkpointRecordId } = req.body as { agentId?: string; checkpointRecordId?: string };
-    const agentId = reqAgent || 'main';
-
-    if (!checkpointRecordId) {
-      res.status(400).json({ error: 'checkpointRecordId required' });
-      return;
-    }
-
-    const record = getCheckpointById(checkpointRecordId);
-    if (!record) {
-      res.status(404).json({ error: 'Checkpoint not found' });
-      return;
-    }
-
-    
-
-    broadcast({ type: 'status', status: 'thinking', agentId });
-
-    try {
-      const rewindOpts = {
-        enableFileCheckpointing: true,
-        resume: record.session_id,
-        cwd: agentId === 'main' ? workspaceBaseDir : path.join(workspaceBaseDir, agentId),
-        permissionMode: 'bypassPermissions' as const,
-        allowDangerouslySkipPermissions: true,
-        env: {
-          ...process.env,
-          CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING: '1',
-        },
-      };
-
-      const rewindQuery = query({ prompt: '', options: rewindOpts });
-      for await (const _msg of rewindQuery) {
-        await rewindQuery.rewindFiles(record.checkpoint_id);
-        break;
-      }
-
-      deleteCheckpointsAfter(agentId, record.created_at);
-
-      broadcastTo(agentId, {
-        type: 'assistant',
-        text: `Files have been rewound to checkpoint: ${record.description} (turn ${record.turn_index})`,
-      });
-
-      res.json({ ok: true, rewoundTo: record });
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error('[rewind] Error:', errorMsg);
-      res.status(500).json({ error: errorMsg });
-    } finally {
-      broadcast({ type: 'status', status: 'idle', agentId });
-    }
-  });
-
-  app.get('/api/agents', (_req, res) => {
-    try {
-      const entries = fs.readdirSync(workspaceBaseDir, { withFileTypes: true });
-      const agents = entries
-        .filter(e => e.isDirectory() && !e.name.startsWith('.'))
-        .map(e => e.name)
-        .filter(name => !INTERNAL_AGENTS.has(name));
-      if (!agents.includes('main')) agents.unshift('main');
-      res.json({ agents });
-    } catch {
-      res.json({ agents: ['main'] });
-    }
   });
 
   app.get('/api/tasks', (req, res) => {

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { apiJson } from '../lib/api';
-import type { SseMessage, RelatedFile } from '../hooks/useSSE';
+import type { SseMessage, RelatedFile, FileDiffInfo } from '../hooks/useSSE';
 
 const API_BASE = import.meta.env.DEV ? 'http://localhost:3210' : '';
 
@@ -10,6 +10,7 @@ interface ChatMessage {
   role: 'user' | 'assistant' | 'error' | 'task';
   content: string;
   files?: RelatedFile[];
+  diffs?: FileDiffInfo[];
 }
 
 interface ChatPanelProps {
@@ -25,7 +26,7 @@ interface ChatPanelProps {
   agentId: string;
   onUnread?: (id: string) => void;
   onOpenPreview?: (filePath: string) => void;
-  onOpenHistory?: () => void;
+  onOpenDiff?: (diff: FileDiffInfo) => void;
 }
 
 interface ClarificationQuestion {
@@ -46,7 +47,7 @@ interface ClarificationProgress {
   customText: string;
 }
 
-export default function ChatPanel({ sse, agentId, onUnread, onOpenPreview, onOpenHistory }: ChatPanelProps) {
+export default function ChatPanel({ sse, agentId, onUnread, onOpenPreview, onOpenDiff }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const historyMapRef = useRef<Record<string, ChatMessage[]>>({});
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
@@ -54,6 +55,12 @@ export default function ChatPanel({ sse, agentId, onUnread, onOpenPreview, onOpe
   const thinkingMapRef = useRef<Record<string, boolean>>({});
   const [isSending, setIsSending] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
+  const [streamingText, setStreamingText] = useState('');
+  const [isStreaming, setIsStreaming] = useState(false);
+  const streamingTextMapRef = useRef<Record<string, string>>({});
+  const isStreamingMapRef = useRef<Record<string, boolean>>({});
+  const pendingDiffsMapRef = useRef<Record<string, FileDiffInfo[]>>({});
+  const [expandedDiffs, setExpandedDiffs] = useState<Record<string, boolean>>({});
   const [requestError, setRequestError] = useState<string | null>(null);
   const [clarification, setClarification] = useState<ClarificationState | null>(null);
   const [clarificationIndex, setClarificationIndex] = useState(0);
@@ -109,6 +116,8 @@ export default function ChatPanel({ sse, agentId, onUnread, onOpenPreview, onOpe
     setChatHistory(historyMapRef.current[agentId] || []);
     setIsThinking(!!thinkingMapRef.current[agentId]);
     setIsStopping(false);
+    setStreamingText(streamingTextMapRef.current[agentId] || '');
+    setIsStreaming(!!isStreamingMapRef.current[agentId]);
     setClarification(clarificationMapRef.current[agentId] || null);
     setClarificationIndex(clarificationIndexRef.current[agentId] || 0);
     setClarificationProgress(clarificationProgressRef.current[agentId] || {});
@@ -123,15 +132,51 @@ export default function ChatPanel({ sse, agentId, onUnread, onOpenPreview, onOpe
     for (const msg of newMessages) {
       const msgAgent = msg.agentId || 'main';
 
-      if (msg.type === 'assistant' && msg.text) {
-        const entry: ChatMessage = { role: 'assistant', content: msg.text! };
-        historyMapRef.current[msgAgent] = [...(historyMapRef.current[msgAgent] || []), entry];
+      if (msg.type === 'assistant_delta' && msg.text) {
+        // Accumulate streaming text
+        const prev = streamingTextMapRef.current[msgAgent] || '';
+        streamingTextMapRef.current[msgAgent] = prev + msg.text;
+        isStreamingMapRef.current[msgAgent] = true;
         thinkingMapRef.current[msgAgent] = false;
         if (msgAgent === currentAgent) {
-          setChatHistory([...historyMapRef.current[msgAgent]]);
+          setStreamingText(streamingTextMapRef.current[msgAgent]);
+          setIsStreaming(true);
           setIsThinking(false);
-        } else {
+        }
+      } else if (msg.type === 'assistant_end') {
+        // Finalize: move streaming text into chat history
+        const finalText = streamingTextMapRef.current[msgAgent] || '';
+        const pendingDiffs = pendingDiffsMapRef.current[msgAgent];
+        if (finalText.trim()) {
+          const entry: ChatMessage = {
+            role: 'assistant',
+            content: finalText,
+            diffs: pendingDiffs?.length ? pendingDiffs : undefined,
+          };
+          historyMapRef.current[msgAgent] = [...(historyMapRef.current[msgAgent] || []), entry];
+        }
+        pendingDiffsMapRef.current[msgAgent] = [];
+        streamingTextMapRef.current[msgAgent] = '';
+        isStreamingMapRef.current[msgAgent] = false;
+        if (msgAgent === currentAgent) {
+          if (finalText.trim()) setChatHistory([...historyMapRef.current[msgAgent]]);
+          setStreamingText('');
+          setIsStreaming(false);
+        } else if (finalText.trim()) {
           onUnread?.(msgAgent);
+        }
+      } else if (msg.type === 'assistant' && msg.text) {
+        // Full message from result — only add if streaming didn't already deliver it
+        if (!isStreamingMapRef.current[msgAgent]) {
+          const entry: ChatMessage = { role: 'assistant', content: msg.text! };
+          historyMapRef.current[msgAgent] = [...(historyMapRef.current[msgAgent] || []), entry];
+          thinkingMapRef.current[msgAgent] = false;
+          if (msgAgent === currentAgent) {
+            setChatHistory([...historyMapRef.current[msgAgent]]);
+            setIsThinking(false);
+          } else {
+            onUnread?.(msgAgent);
+          }
         }
       } else if (msg.type === 'error' && msg.text) {
         const entry: ChatMessage = { role: 'error', content: msg.text! };
@@ -152,6 +197,21 @@ export default function ChatPanel({ sse, agentId, onUnread, onOpenPreview, onOpe
       } else if (msg.type === 'status') {
         const thinking = msg.status === 'thinking';
         thinkingMapRef.current[msgAgent] = thinking;
+        // If going idle while streaming, finalize the streaming bubble
+        if (!thinking && isStreamingMapRef.current[msgAgent]) {
+          const finalText = streamingTextMapRef.current[msgAgent] || '';
+          if (finalText.trim()) {
+            const entry: ChatMessage = { role: 'assistant', content: finalText };
+            historyMapRef.current[msgAgent] = [...(historyMapRef.current[msgAgent] || []), entry];
+          }
+          streamingTextMapRef.current[msgAgent] = '';
+          isStreamingMapRef.current[msgAgent] = false;
+          if (msgAgent === currentAgent) {
+            if (finalText.trim()) setChatHistory([...historyMapRef.current[msgAgent]]);
+            setStreamingText('');
+            setIsStreaming(false);
+          }
+        }
         if (msgAgent === currentAgent) {
           setIsThinking(thinking);
           if (thinking) setIsSending(false);
@@ -166,6 +226,26 @@ export default function ChatPanel({ sse, agentId, onUnread, onOpenPreview, onOpe
             historyMapRef.current[msgAgent] = [...history];
             if (msgAgent === currentAgent) {
               setChatHistory([...historyMapRef.current[msgAgent]]);
+            }
+          }
+        }
+      } else if (msg.type === 'file_diff' && msg.diff) {
+        // If streaming, buffer diffs to attach when assistant_end fires
+        if (isStreamingMapRef.current[msgAgent]) {
+          const pending = pendingDiffsMapRef.current[msgAgent] || [];
+          pendingDiffsMapRef.current[msgAgent] = [...pending, msg.diff];
+        } else {
+          // Attach to the last assistant message
+          const history = historyMapRef.current[msgAgent];
+          if (history && history.length > 0) {
+            const lastIdx = history.length - 1;
+            if (history[lastIdx].role === 'assistant') {
+              const existing = history[lastIdx].diffs || [];
+              history[lastIdx] = { ...history[lastIdx], diffs: [...existing, msg.diff] };
+              historyMapRef.current[msgAgent] = [...history];
+              if (msgAgent === currentAgent) {
+                setChatHistory([...historyMapRef.current[msgAgent]]);
+              }
             }
           }
         }
@@ -188,7 +268,7 @@ export default function ChatPanel({ sse, agentId, onUnread, onOpenPreview, onOpe
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatHistory, isThinking]);
+  }, [chatHistory, isThinking, streamingText]);
 
   const resetTextarea = () => {
     if (textareaRef.current) {
@@ -422,17 +502,6 @@ export default function ChatPanel({ sse, agentId, onUnread, onOpenPreview, onOpe
             )}
           </div>
           <button
-            onClick={() => onOpenHistory?.()}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors duration-150 cursor-pointer px-2.5 py-1.5 rounded-lg hover:bg-slate-800/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
-            title="Version history & rollback"
-          >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
-            </svg>
-            History
-          </button>
-          <button
             onClick={handleNewChat}
             disabled={isThinking}
             className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-150 cursor-pointer px-2.5 py-1.5 rounded-lg hover:bg-slate-800/50"
@@ -502,12 +571,85 @@ export default function ChatPanel({ sse, agentId, onUnread, onOpenPreview, onOpe
                         ))}
                       </div>
                     )}
+                    {msg.diffs && msg.diffs.length > 0 && (
+                      <div className="mt-2.5 pt-2.5 border-t border-slate-700/30 space-y-2">
+                        {msg.diffs.map((d, di) => {
+                          const diffKey = `${i}-${di}`;
+                          const isExpanded = !!expandedDiffs[diffKey];
+                          return (
+                            <div key={diffKey} className="rounded-lg border border-slate-700/40 overflow-hidden">
+                              <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800/40">
+                                <button
+                                  onClick={() => setExpandedDiffs(prev => ({ ...prev, [diffKey]: !prev[diffKey] }))}
+                                  className="flex items-center gap-1.5 flex-1 min-w-0 text-xs text-slate-300 hover:text-slate-100 cursor-pointer"
+                                >
+                                  <svg className={`w-3 h-3 text-slate-500 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="9 18 15 12 9 6" />
+                                  </svg>
+                                  <svg className="w-3 h-3 text-amber-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                                    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                  </svg>
+                                  <span className="font-mono truncate">{d.fileName}</span>
+                                  <span className="text-emerald-400 text-[10px] shrink-0">+{d.additions}</span>
+                                  <span className="text-red-400 text-[10px] shrink-0">-{d.deletions}</span>
+                                  <span className="text-[10px] text-slate-600 shrink-0">
+                                    {d.diffType === 'create' ? 'new' : d.diffType}
+                                  </span>
+                                </button>
+                                <button
+                                  onClick={() => onOpenDiff?.(d)}
+                                  className="px-1.5 py-0.5 rounded text-[10px] text-slate-400 hover:text-slate-100 hover:bg-slate-700/60 cursor-pointer transition-colors shrink-0"
+                                  title="Open in panel"
+                                >
+                                  ↗
+                                </button>
+                              </div>
+                              {isExpanded && d.hunks.length > 0 && (
+                                <div className="border-t border-slate-700/30 overflow-x-auto max-h-[300px] overflow-y-auto">
+                                  {d.hunks.map((hunk, hi) => (
+                                    <div key={hi}>
+                                      <div className="text-[10px] text-slate-600 bg-slate-900/40 px-3 py-0.5 font-mono sticky top-0">
+                                        @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@
+                                      </div>
+                                      {hunk.lines.map((line, li) => {
+                                        const prefix = line[0];
+                                        const content = line.slice(1);
+                                        return (
+                                          <div
+                                            key={li}
+                                            className={`px-3 font-mono text-[11px] leading-[1.6] whitespace-pre ${
+                                              prefix === '+' ? 'bg-emerald-950/30 text-emerald-300'
+                                              : prefix === '-' ? 'bg-red-950/30 text-red-300'
+                                              : 'text-slate-500'
+                                            }`}
+                                          >
+                                            <span className="select-none opacity-50 inline-block w-3">{prefix}</span>{content}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </>
                 )}
               </div>
             </div>
           ))}
-          {isThinking && (
+          {isStreaming && streamingText && (
+            <div className="flex justify-start animate-fade-in-up">
+              <div className="max-w-[80%] rounded-2xl px-4 py-3 bg-slate-800/60 text-slate-200 border border-slate-700/40">
+                <p className="whitespace-pre-wrap text-[0.9375rem] leading-relaxed">{streamingText}<span className="inline-block w-1.5 h-4 bg-slate-400 animate-pulse ml-0.5 align-text-bottom rounded-sm" /></p>
+              </div>
+            </div>
+          )}
+          {isThinking && !isStreaming && (
             <div className="flex justify-start animate-fade-in-up">
               <div className="bg-slate-800/60 border border-slate-700/40 rounded-2xl px-4 py-3.5 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-dot-bounce" />

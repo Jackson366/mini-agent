@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
-import type { ScheduledTask, TaskRunLog, CheckpointRecord } from './types.js';
+import type { ScheduledTask, TaskRunLog } from './types.js';
 
 let db: Database.Database;
 
@@ -37,16 +37,6 @@ function createSchema(database: Database.Database): void {
       FOREIGN KEY (task_id) REFERENCES scheduled_tasks(id)
     );
     CREATE INDEX IF NOT EXISTS idx_task_run_logs ON task_run_logs(task_id, run_at);
-    CREATE TABLE IF NOT EXISTS checkpoints (
-      id TEXT PRIMARY KEY,
-      agent_id TEXT NOT NULL,
-      session_id TEXT NOT NULL,
-      checkpoint_id TEXT NOT NULL,
-      turn_index INTEGER NOT NULL,
-      description TEXT DEFAULT '',
-      created_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_checkpoints_agent ON checkpoints(agent_id, created_at);
   `);
 }
 
@@ -197,29 +187,4 @@ export function logTaskRun(log: TaskRunLog): void {
     `INSERT INTO task_run_logs (task_id, run_at, duration_ms, status, result, error)
      VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(log.task_id, log.run_at, log.duration_ms, log.status, log.result, log.error);
-}
-
-export function saveCheckpoint(cp: CheckpointRecord): void {
-  db.prepare(
-    `INSERT OR REPLACE INTO checkpoints (id, agent_id, session_id, checkpoint_id, turn_index, description, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(cp.id, cp.agent_id, cp.session_id, cp.checkpoint_id, cp.turn_index, cp.description, cp.created_at);
-}
-
-export function getCheckpoints(agentId: string): CheckpointRecord[] {
-  return db
-    .prepare('SELECT * FROM checkpoints WHERE agent_id = ? ORDER BY created_at ASC')
-    .all(agentId) as CheckpointRecord[];
-}
-
-export function getCheckpointById(id: string): CheckpointRecord | undefined {
-  return db.prepare('SELECT * FROM checkpoints WHERE id = ?').get(id) as CheckpointRecord | undefined;
-}
-
-export function deleteCheckpointsAfter(agentId: string, createdAt: string): void {
-  db.prepare('DELETE FROM checkpoints WHERE agent_id = ? AND created_at > ?').run(agentId, createdAt);
-}
-
-export function deleteCheckpointsForAgent(agentId: string): void {
-  db.prepare('DELETE FROM checkpoints WHERE agent_id = ?').run(agentId);
 }

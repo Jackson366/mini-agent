@@ -2,14 +2,15 @@ import fs from 'fs';
 import path from 'path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { MessageStream } from './message-stream.js';
-import { createPreCompactHook, createSanitizeBashHook, createAskUserQuestionHook } from './hooks.js';
+import { createPreCompactHook, createSanitizeBashHook, createAskUserQuestionHook, createPostToolUseHook } from './hooks.js';
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk';
 import type {
   AgentInput,
   AgentOutput,
-  CheckpointInfo,
   ClarificationQuestion,
   RunQueryResult,
+  StreamDelta,
+  FileDiffInfo,
 } from './types.js';
 
 export interface RunAgentOptions {
@@ -19,11 +20,12 @@ export interface RunAgentOptions {
   dataDir: string;
   mcpServerPath: string;
   onOutput: (output: AgentOutput) => void;
-  onCheckpoint?: (checkpoint: CheckpointInfo) => void;
   onClarification?: (request: {
     toolUseId: string;
     questions: ClarificationQuestion[];
   }) => Promise<Record<string, string>>;
+  onStreamDelta?: (delta: StreamDelta) => void;
+  onFileDiff?: (diff: FileDiffInfo) => void;
   stream: MessageStream;
 }
 
@@ -35,8 +37,9 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
     dataDir,
     mcpServerPath,
     onOutput,
-    onCheckpoint,
     onClarification,
+    onStreamDelta,
+    onFileDiff,
     stream,
   } = options;
 
@@ -44,8 +47,6 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
   let lastAssistantUuid: string | undefined;
   let messageCount = 0;
   let resultCount = 0;
-  const checkpoints: CheckpointInfo[] = [];
-  let userTurnIndex = 0;
 
   const log = (msg: string) => console.error(`[agent] ${msg}`);
 
@@ -75,7 +76,7 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
     cwd: agentDir,
     additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
     resume,
-    enableFileCheckpointing: true,
+    includePartialMessages: true,
     extraArgs: { 'replay-user-messages': null },
     systemPrompt: systemPromptAppend
       ? { type: 'preset' as const, preset: 'claude_code' as const, append: systemPromptAppend }
@@ -87,9 +88,8 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
       'Task', 'TaskOutput', 'TaskStop',
       'SendMessage',
       'TodoWrite', 'ToolSearch', 'Skill',
-      'NotebookEdit',
       'AskUserQuestion',
-      'mcp__nanoclaw__*',
+      'mcp__clara__*',
     ],
     canUseTool: (async (_toolName, toolInput, _toolOptions) => {
       return { behavior: 'allow' as const, updatedInput: toolInput };
@@ -98,13 +98,12 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
       ...sdkEnv,
       "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
       "ANTHROPIC_AUTH_TOKEN": "d7a8f1c1ca33434ca66897e6010a556e.DYOFlZnzpTNSRQ8h",
-      "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING": "1",
     },
     permissionMode: 'bypassPermissions' as const,
     allowDangerouslySkipPermissions: true,
     settingSources: ['project', 'user'] as ('project' | 'user')[],
     mcpServers: {
-      nanoclaw: {
+      clara: {
         command: mcpServerPath.endsWith('.ts') ? 'tsx' : 'node',
         args: [mcpServerPath],
         env: mcpEnv,
@@ -116,6 +115,7 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
         { matcher: 'Bash', hooks: [createSanitizeBashHook()] },
         { matcher: 'AskUserQuestion', hooks: [createAskUserQuestionHook(onClarification)] },
       ],
+      PostToolUse: [{ hooks: [createPostToolUseHook(onFileDiff)] }],
     },
   });
 
@@ -124,28 +124,25 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
 
   outer: while (true) {
     for await (const message of query({ prompt: stream, options: buildOptions(resumeId) })) {
+      console.log('message', JSON.stringify(message));
       messageCount++;
       const msgType = message.type === 'system' ? `system/${(message as { subtype?: string }).subtype}` : message.type;
-      log(`[msg #${messageCount}] type=${msgType} message=${JSON.stringify(message)}`);
-
-      if (message.type === 'user' && 'uuid' in message) {
-        const uuid = (message as { uuid?: string }).uuid;
-        if (uuid && newSessionId) {
-          userTurnIndex++;
-          const cp: CheckpointInfo = {
-            checkpointId: uuid,
-            sessionId: newSessionId,
-            turnIndex: userTurnIndex,
-            timestamp: new Date().toISOString(),
-          };
-          checkpoints.push(cp);
-          log(`Checkpoint captured: turn=${userTurnIndex} uuid=${uuid}`);
-          onCheckpoint?.(cp);
-        }
-      }
+      log(`[msg #${messageCount}] type=${msgType}`);
 
       if (message.type === 'assistant' && 'uuid' in message) {
         lastAssistantUuid = (message as { uuid: string }).uuid;
+      }
+
+      if (message.type === 'stream_event') {
+        const evt = (message as any).event;
+        const parentToolUseId = (message as any).parent_tool_use_id;
+        if (parentToolUseId !== null) continue;
+
+        if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
+          onStreamDelta?.({ event: 'delta', text: evt.delta.text });
+        } else if (evt.type === 'content_block_stop') {
+          onStreamDelta?.({ event: 'end' });
+        }
       }
 
       if (message.type === 'system' && message.subtype === 'init') {
@@ -183,6 +180,6 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
     break;
   }
 
-  log(`Query done. Messages: ${messageCount}, results: ${resultCount}, checkpoints: ${checkpoints.length}`);
-  return { newSessionId, lastAssistantUuid, checkpoints };
+  log(`Query done. Messages: ${messageCount}, results: ${resultCount}`);
+  return { newSessionId, lastAssistantUuid };
 }

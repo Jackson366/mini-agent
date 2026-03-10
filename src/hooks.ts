@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { HookCallback, PreCompactHookInput, PreToolUseHookInput } from '@anthropic-ai/claude-agent-sdk';
+import type { HookCallback, PreCompactHookInput, PreToolUseHookInput, PostToolUseHookInput } from '@anthropic-ai/claude-agent-sdk';
 import {
   formatTranscriptMarkdown,
   generateFallbackName,
@@ -8,7 +8,7 @@ import {
   parseTranscript,
   sanitizeFilename,
 } from './transcript.js';
-import type { ClarificationOption, ClarificationQuestion } from './types.js';
+import type { ClarificationOption, ClarificationQuestion, FileDiffInfo } from './types.js';
 
 const SECRET_ENV_VARS = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'];
 
@@ -129,5 +129,66 @@ export function createAskUserQuestionHook(
         },
       },
     };
+  };
+}
+
+const FILE_LANG: Record<string, string> = {
+  '.ts': 'typescript', '.tsx': 'typescript', '.js': 'javascript', '.jsx': 'javascript',
+  '.json': 'json', '.md': 'markdown', '.yaml': 'yaml', '.yml': 'yaml',
+  '.css': 'css', '.html': 'html', '.py': 'python', '.sh': 'bash',
+  '.sql': 'sql', '.xml': 'xml', '.txt': 'plaintext', '.csv': 'csv',
+  '.env': 'plaintext', '.toml': 'toml', '.ini': 'ini',
+};
+
+export function createPostToolUseHook(
+  onFileDiff?: (diff: FileDiffInfo) => void,
+): HookCallback {
+  return async (input, _toolUseId, _context) => {
+    if (!onFileDiff) return {};
+
+    const postInput = input as PostToolUseHookInput;
+    const toolName = postInput.tool_name;
+    if (toolName !== 'Edit' && toolName !== 'Write') return {};
+
+    const resp = postInput.tool_response as Record<string, unknown> | undefined;
+    if (!resp) return {};
+
+    const filePath = (resp.filePath as string) || '';
+    if (!filePath) return {};
+
+    const ext = path.extname(filePath).toLowerCase();
+    const structuredPatch = resp.structuredPatch as FileDiffInfo['hunks'] | undefined;
+    const gitDiff = resp.gitDiff as { additions?: number; deletions?: number } | undefined;
+
+    let additions = gitDiff?.additions ?? 0;
+    let deletions = gitDiff?.deletions ?? 0;
+    if (!gitDiff && structuredPatch) {
+      for (const hunk of structuredPatch) {
+        for (const line of hunk.lines) {
+          if (line.startsWith('+')) additions++;
+          else if (line.startsWith('-')) deletions++;
+        }
+      }
+    }
+
+    let diffType: FileDiffInfo['diffType'];
+    if (toolName === 'Edit') {
+      diffType = 'edit';
+    } else {
+      diffType = (resp.type as string) === 'create' ? 'create' : 'update';
+    }
+
+    onFileDiff({
+      filePath,
+      fileName: path.basename(filePath),
+      language: FILE_LANG[ext],
+      diffType,
+      additions,
+      deletions,
+      hunks: structuredPatch || [],
+      timestamp: new Date().toISOString(),
+    });
+
+    return {};
   };
 }

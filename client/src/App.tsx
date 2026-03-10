@@ -1,56 +1,29 @@
 import { useState, useCallback, useEffect } from 'react';
-import { useSSE } from './hooks/useSSE';
+import { useSSE, type FileDiffInfo } from './hooks/useSSE';
 import ChatPanel from './components/ChatPanel';
 import TaskPanel from './components/TaskPanel';
 import FilePreviewPanel from './components/FilePreviewPanel';
-import VersionHistoryPanel from './components/VersionHistoryPanel';
 import Sidebar from './components/Sidebar';
 
-type RightPanel = { type: 'preview'; path: string } | { type: 'history' } | null;
+type RightPanel = { type: 'preview'; path: string } | { type: 'diff'; diff: FileDiffInfo } | null;
 
 export default function App() {
-  const [agentId, setAgentId] = useState('main');
+  const agentId = 'main';
   const [view, setView] = useState<'chat' | 'tasks'>('chat');
-  const [unreadAgents, setUnreadAgents] = useState<Set<string>>(new Set());
   const [rightPanel, setRightPanel] = useState<RightPanel>(null);
   const sse = useSSE();
-
-  const handleAgentChange = useCallback((id: string) => {
-    setAgentId(id);
-    setUnreadAgents(prev => {
-      if (!prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
-  }, []);
-
-  const handleUnread = useCallback((id: string) => {
-    setUnreadAgents(prev => {
-      if (prev.has(id)) return prev;
-      return new Set(prev).add(id);
-    });
-  }, []);
 
   const handleOpenPreview = useCallback((filePath: string) => {
     setRightPanel({ type: 'preview', path: filePath });
   }, []);
 
-  const handleOpenHistory = useCallback(() => {
-    setRightPanel(prev =>
-      prev?.type === 'history' ? null : { type: 'history' }
-    );
+  const handleOpenDiff = useCallback((diff: FileDiffInfo) => {
+    setRightPanel({ type: 'diff', diff });
   }, []);
 
   const handleCloseRight = useCallback(() => {
     setRightPanel(null);
   }, []);
-
-  const handleRewound = useCallback(() => {
-    if (rightPanel?.type === 'preview') {
-      setRightPanel({ ...rightPanel });
-    }
-  }, [rightPanel]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -67,21 +40,17 @@ export default function App() {
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100 font-sans antialiased">
       <Sidebar
-        agentId={agentId}
-        onAgentChange={handleAgentChange}
         view={view}
         onViewChange={setView}
         connected={sse.connected}
-        unreadAgents={unreadAgents}
       />
       <main className="flex-1 flex min-w-0">
         <div className={`flex-1 flex flex-col min-w-0 ${view === 'chat' ? '' : 'hidden'}`}>
           <ChatPanel
             sse={sse}
             agentId={agentId}
-            onUnread={handleUnread}
             onOpenPreview={handleOpenPreview}
-            onOpenHistory={handleOpenHistory}
+            onOpenDiff={handleOpenDiff}
           />
         </div>
         <div className={`flex-1 flex flex-col ${view === 'tasks' ? '' : 'hidden'}`}>
@@ -101,12 +70,12 @@ export default function App() {
               onClose={handleCloseRight}
             />
           )}
-          {rightPanel?.type === 'history' && (
-            <VersionHistoryPanel
+          {rightPanel?.type === 'diff' && (
+            <FilePreviewPanel
+              filePath={rightPanel.diff.filePath}
               agentId={agentId}
-              sseMessages={sse.messages}
               onClose={handleCloseRight}
-              onRewound={handleRewound}
+              diffData={rightPanel.diff}
             />
           )}
         </div>
@@ -126,12 +95,12 @@ export default function App() {
                   onClose={handleCloseRight}
                 />
               )}
-              {rightPanel?.type === 'history' && (
-                <VersionHistoryPanel
+              {rightPanel?.type === 'diff' && (
+                <FilePreviewPanel
+                  filePath={rightPanel.diff.filePath}
                   agentId={agentId}
-                  sseMessages={sse.messages}
                   onClose={handleCloseRight}
-                  onRewound={handleRewound}
+                  diffData={rightPanel.diff}
                 />
               )}
             </div>

@@ -17,7 +17,7 @@ const dataDir = process.env.MINI_AGENT_DATA_DIR || path.resolve(process.cwd(), '
 initDatabase(dataDir);
 
 const server = new McpServer({
-  name: 'nanoclaw',
+  name: 'clara',
   version: '1.0.0',
 });
 
