@@ -5,29 +5,24 @@ import { LANGUAGE_MAP, MAX_PREVIEW_BYTES, walkDirectory } from '../services/file
 
 export function createFilesRouter(workspaceBaseDir: string): Router {
   const router = Router();
+  // 限制到 output 子目录
+  const OUTPUT_DIR = path.join(workspaceBaseDir, 'output');
 
   /**
    * @swagger
    * /api/files/preview:
    *   get:
    *     summary: 文件预览
-   *     description: 获取文件内容和元信息
+   *     description: 获取 output 目录下文件的内容和元信息
    *     tags: [Files]
    *     parameters:
-   *       - name: agentId
-   *         in: query
-   *         description: Agent ID
-   *         required: false
-   *         schema:
-   *           type: string
-   *           example: "main"
    *       - name: path
    *         in: query
-   *         description: 文件相对路径
+   *         description: 文件相对路径（相对于 output 目录）
    *         required: true
    *         schema:
    *           type: string
-   *           example: "src/index.ts"
+   *           example: "file.txt"
    *     responses:
    *       200:
    *         description: 文件内容
@@ -38,16 +33,16 @@ export function createFilesRouter(workspaceBaseDir: string): Router {
    *               properties:
    *                 path:
    *                   type: string
-   *                   example: "src/index.ts"
+   *                   example: "file.txt"
    *                 name:
    *                   type: string
-   *                   example: "index.ts"
+   *                   example: "file.txt"
    *                 content:
    *                   type: string
-   *                   example: "console.log('hello');"
+   *                   example: "content..."
    *                 language:
    *                   type: string
-   *                   example: "typescript"
+   *                   example: "plaintext"
    *                 size:
    *                   type: number
    *                   example: 1024
@@ -62,7 +57,6 @@ export function createFilesRouter(workspaceBaseDir: string): Router {
    *         description: 文件不存在
    */
   router.get('/preview', (req, res) => {
-    const agentId = (req.query.agentId as string) || 'main';
     const filePath = req.query.path as string | undefined;
 
     if (!filePath) {
@@ -70,11 +64,9 @@ export function createFilesRouter(workspaceBaseDir: string): Router {
       return;
     }
 
-    const isMain = agentId === 'main';
-    const baseDir = isMain ? workspaceBaseDir : path.join(workspaceBaseDir, agentId);
-    const resolved = path.resolve(baseDir, filePath);
+    const resolved = path.resolve(OUTPUT_DIR, filePath);
 
-    if (!resolved.startsWith(path.resolve(baseDir) + path.sep) && resolved !== path.resolve(baseDir)) {
+    if (!resolved.startsWith(path.resolve(OUTPUT_DIR) + path.sep) && resolved !== path.resolve(OUTPUT_DIR)) {
       res.status(403).json({ error: 'Path traversal not allowed' });
       return;
     }
@@ -98,7 +90,7 @@ export function createFilesRouter(workspaceBaseDir: string): Router {
       : fs.readFileSync(resolved, 'utf-8');
 
     res.json({
-      path: path.relative(baseDir, resolved),
+      path: path.relative(OUTPUT_DIR, resolved),
       name: path.basename(resolved),
       content: raw,
       language,
@@ -112,16 +104,8 @@ export function createFilesRouter(workspaceBaseDir: string): Router {
    * /api/files/list:
    *   get:
    *     summary: 文件列表
-   *     description: 列出工作目录中的所有文件
+   *     description: 列出 output 目录中的所有文件
    *     tags: [Files]
-   *     parameters:
-   *       - name: agentId
-   *         in: query
-   *         description: Agent ID
-   *         required: false
-   *         schema:
-   *           type: string
-   *           example: "main"
    *     responses:
    *       200:
    *         description: 文件列表
@@ -137,26 +121,22 @@ export function createFilesRouter(workspaceBaseDir: string): Router {
    *                     properties:
    *                       path:
    *                         type: string
-   *                         example: "src/index.ts"
+   *                         example: "file.txt"
    *                       name:
    *                         type: string
-   *                         example: "index.ts"
+   *                         example: "file.txt"
    *                       language:
    *                         type: string
-   *                         example: "typescript"
+   *                         example: "plaintext"
    */
-  router.get('/list', (req, res) => {
-    const agentId = (req.query.agentId as string) || 'main';
-    const isMain = agentId === 'main';
-    const baseDir = isMain ? workspaceBaseDir : path.join(workspaceBaseDir, agentId);
-
-    if (!fs.existsSync(baseDir)) {
+  router.get('/list', (_req, res) => {
+    if (!fs.existsSync(OUTPUT_DIR)) {
       res.json({ files: [] });
       return;
     }
 
     const results: Array<{ path: string; name: string; language?: string }> = [];
-    walkDirectory(baseDir, baseDir, results, 0);
+    walkDirectory(OUTPUT_DIR, OUTPUT_DIR, results, 0);
     results.sort((a, b) => a.path.localeCompare(b.path));
     res.json({ files: results });
   });

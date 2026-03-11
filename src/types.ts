@@ -102,7 +102,7 @@ export interface FileDiffInfo {
 }
 
 export interface SseMessageOut {
-  type: 'assistant' | 'assistant_delta' | 'assistant_end' | 'status' | 'error' | 'task_message' | 'session' | 'clarification_request' | 'related_files' | 'file_diff';
+  type: 'assistant' | 'assistant_delta' | 'assistant_end' | 'status' | 'error' | 'task_message' | 'session' | 'clarification_request' | 'related_files' | 'file_diff' | 'turn_end';
   text?: string;
   status?: string;
   sessionId?: string;

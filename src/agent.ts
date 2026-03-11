@@ -26,6 +26,7 @@ export interface RunAgentOptions {
   }) => Promise<Record<string, string>>;
   onStreamDelta?: (delta: StreamDelta) => void;
   onFileDiff?: (diff: FileDiffInfo) => void;
+  onTurnEnd?: () => void;
   stream: MessageStream;
 }
 
@@ -40,6 +41,7 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
     onClarification,
     onStreamDelta,
     onFileDiff,
+    onTurnEnd,
     stream,
   } = options;
 
@@ -175,6 +177,8 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
           result: textResult || null,
           newSessionId,
         });
+
+        onTurnEnd?.();
       }
     }
     break;

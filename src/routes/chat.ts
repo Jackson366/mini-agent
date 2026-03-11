@@ -173,6 +173,9 @@ export function createChatRouter(ctx: ServerContext): Router {
         onFileDiff: (diff) => {
           sseManager.broadcastTo(agentId, { type: 'file_diff', diff });
         },
+        onTurnEnd: () => {
+          sseManager.broadcastTo(agentId, { type: 'turn_end' });
+        },
         stream,
       });
 
