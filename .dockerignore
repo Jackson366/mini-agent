@@ -49,12 +49,6 @@ Dockerfile*
 .dockerignore
 docker-compose*.yml
 
-# Data directories (will be mounted as volumes)
-data/
-workspace/
-workspace/.claude/
-workspace/conversations/
-workspace/output/
 
 # Logs
 logs/

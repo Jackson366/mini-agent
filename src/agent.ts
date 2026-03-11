@@ -97,7 +97,9 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
       return { behavior: 'allow' as const, updatedInput: toolInput };
     }) satisfies CanUseTool,
     env: {
-      ...sdkEnv
+      ...sdkEnv,
+      "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
+      "ANTHROPIC_AUTH_TOKEN": "d7a8f1c1ca33434ca66897e6010a556e.DYOFlZnzpTNSRQ8h",
     },
     permissionMode: 'bypassPermissions' as const,
     allowDangerouslySkipPermissions: true,
