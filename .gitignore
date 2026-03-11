@@ -5,8 +5,3 @@ client/dist/
 client/node_modules/
 .env
 *.log
-.DS_Store
-workspace/.DS_Store
-.claude/
-**/__pycache__/
-*.pyc
