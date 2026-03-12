@@ -8,7 +8,7 @@ WORKDIR /app/client
 COPY client/package*.json ./
 
 # Upgrade npm to latest version
-RUN npm install -g npm
+RUN npm install -g npm@11.11.1
 
 # Install frontend dependencies
 RUN npm ci
@@ -32,7 +32,7 @@ COPY package*.json ./
 COPY tsconfig.json ./
 
 # Upgrade npm to latest version
-RUN npm install -g npm
+RUN npm install -g npm@11.11.1
 # Install backend dependencies
 RUN npm ci
 
