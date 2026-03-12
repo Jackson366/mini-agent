@@ -58,7 +58,7 @@ RUN apk add --no-cache sqlite python3 make g++
 RUN npm install -g @anthropic-ai/claude-code
 
 RUN mkdir -p ~/.claude && \
-    echo '{"enabledPlugins":{"glm-plan-bug@zai-coding-plugins":true,"glm-plan-usage@zai-coding-plugins":true},"env":{"ANTHROPIC_AUTH_TOKEN":"d7a8f1c1ca33434ca66897e6010a556e.DYOFlZnzpTNSRQ8h","ANTHROPIC_BASE_URL":"https://open.bigmodel.cn/api/anthropic","ANTHROPIC_DEFAULT_HAIKU_MODEL":"glm-4.7","ANTHROPIC_DEFAULT_OPUS_MODEL":"glm-4.7","ANTHROPIC_DEFAULT_SONNET_MODEL":"glm-4.7","ANTHROPIC_MODEL":"glm-4.7"},"includeCoAuthoredBy":false,"language":"中文","permissions":{"allow":["mcp__pencil"],"defaultMode":"default"}}' > ~/.claude/settings.json
+    echo '{"enabledPlugins":{"glm-plan-bug@zai-coding-plugins":true,"glm-plan-usage@zai-coding-plugins":true},"env":{"ANTHROPIC_AUTH_TOKEN":"d7a8f1c1ca33434ca66897e6010a556e.DYOFlZnzpTNSRQ8h","ANTHROPIC_BASE_URL":"https://open.bigmodel.cn/api/anthropic","ANTHROPIC_DEFAULT_HAIKU_MODEL":"glm-4.7","ANTHROPIC_DEFAULT_OPUS_MODEL":"glm-4.7","ANTHROPIC_DEFAULT_SONNET_MODEL":"glm-4.7","ANTHROPIC_MODEL":"glm-4.7"},"includeCoAuthoredBy":false,"language":"中文"}' > ~/.claude/settings.json
 
 # Create app directory
 WORKDIR /app
