@@ -77,16 +77,6 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
 
   const buildOptions = (resume?: string) => ({
     cwd: agentDir,
-    debug: true,
-    debugFile: './log.txt',
-    pathToClaudeCodeExecutable: process.env.CLAUDE_PATH || (() => {
-      try {
-        const { execSync } = require('child_process');
-        return execSync('which claude').toString().trim();
-      } catch {
-        return '/usr/local/bin/claude';
-      }
-    })(),
     additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
     resume,
     includePartialMessages: true,
