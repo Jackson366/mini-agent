@@ -48,6 +48,9 @@ RUN npm prune --omit=dev
 # Stage 3: Production Runtime
 FROM node:20-alpine
 
+# Ensure running as root for maximum permissions
+USER root
+
 # Install runtime and build dependencies for better-sqlite3
 RUN apk add --no-cache sqlite python3 make g++
 
@@ -71,8 +74,9 @@ COPY skills ./skills
 # Copy workspace content
 COPY workspace ./workspace
 
-# Create necessary directories
-RUN mkdir -p /app/data /app/workspace /app/workspace/output /app/workspace/conversations
+# Create necessary directories with full permissions
+RUN mkdir -p /app/data /app/workspace /app/workspace/output /app/workspace/conversations && \
+  chmod -R 777 /app
 
 
 # Expose port
