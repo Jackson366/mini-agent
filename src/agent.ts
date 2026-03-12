@@ -12,6 +12,7 @@ import type {
   StreamDelta,
   FileDiffInfo,
 } from './types.js';
+import { debug } from 'util';
 
 export interface RunAgentOptions {
   input: AgentInput;
@@ -76,6 +77,8 @@ export async function runAgent(options: RunAgentOptions): Promise<RunQueryResult
 
   const buildOptions = (resume?: string) => ({
     cwd: agentDir,
+    debug: true,
+    debugFile: './log.txt',
     additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
     resume,
     includePartialMessages: true,
