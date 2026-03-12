@@ -7,6 +7,9 @@ WORKDIR /app/client
 # Copy frontend package files
 COPY client/package*.json ./
 
+# Upgrade npm to latest version
+RUN npm install -g npm
+
 # Install frontend dependencies
 RUN npm ci
 
@@ -24,13 +27,12 @@ RUN apk add --no-cache python3 make g++ sqlite
 
 WORKDIR /app
 
-# Install Claude Code CLI globally (required before other steps)
-RUN npm install -g @anthropic-ai/claude-code
-
 # Copy backend package files
 COPY package*.json ./
 COPY tsconfig.json ./
 
+# Upgrade npm to latest version
+RUN npm install -g npm
 # Install backend dependencies
 RUN npm ci
 
@@ -52,10 +54,6 @@ RUN apk add --no-cache sqlite python3 make g++
 # Create app directory
 WORKDIR /app
 
-# Create Claude Code settings directory and configuration file
-RUN mkdir -p ~/.claude && \
-    echo '{"enabledPlugins":{"glm-plan-bug@zai-coding-plugins":true,"glm-plan-usage@zai-coding-plugins":true},"env":{"ANTHROPIC_AUTH_TOKEN":"d7a8f1c1ca33434ca66897e6010a556e.DYOFlZnzpTNSRQ8h","ANTHROPIC_BASE_URL":"https://open.bigmodel.cn/api/anthropic","ANTHROPIC_DEFAULT_HAIKU_MODEL":"glm-4.7","ANTHROPIC_DEFAULT_OPUS_MODEL":"glm-4.7","ANTHROPIC_DEFAULT_SONNET_MODEL":"glm-4.7","ANTHROPIC_MODEL":"glm-4.7"},"includeCoAuthoredBy":false,"language":"中文","permissions":{"allow":["mcp__pencil"],"defaultMode":"default"}}' > ~/.claude/settings.json
-
 # Copy backend package files and build output
 COPY --from=backend-builder /app/package*.json ./
 COPY --from=backend-builder /app/node_modules ./node_modules
@@ -69,6 +67,9 @@ COPY .env ./.env
 
 # Copy skills (used at runtime)
 COPY skills ./skills
+
+# Copy workspace content
+COPY workspace ./workspace
 
 # Create necessary directories
 RUN mkdir -p /app/data /app/workspace /app/workspace/output /app/workspace/conversations
