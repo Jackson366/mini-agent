@@ -1,7 +1,8 @@
+
 export interface AgentInput {
   prompt: string;
   sessionId?: string;
-  workspace: string;
+  agentId: string;
   isScheduledTask?: boolean;
   assistantName?: string;
 }
@@ -13,9 +14,21 @@ export interface AgentOutput {
   error?: string;
 }
 
+export interface ClarificationOption {
+  label: string;
+  description: string;
+}
+
+export interface ClarificationQuestion {
+  question: string;
+  header: string;
+  options: ClarificationOption[];
+  multiSelect?: boolean;
+}
+
 export interface ScheduledTask {
   id: string;
-  workspace: string;
+  agent_id: string;
   prompt: string;
   schedule_type: 'cron' | 'interval' | 'once';
   schedule_value: string;
@@ -64,11 +77,54 @@ export interface RunQueryResult {
   lastAssistantUuid?: string;
 }
 
+export interface StreamDelta {
+  event: 'delta' | 'end';
+  text?: string;
+}
+
+export interface FileDiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: string[];
+}
+
+export interface FileDiffInfo {
+  filePath: string;
+  fileName: string;
+  language?: string;
+  diffType: 'create' | 'update' | 'edit';
+  additions: number;
+  deletions: number;
+  hunks: FileDiffHunk[];
+  timestamp: string;
+}
+
 export interface SseMessageOut {
-  type: 'assistant' | 'status' | 'error' | 'task_message' | 'session';
+  type: 'assistant' | 'assistant_delta' | 'assistant_end' | 'status' | 'error' | 'task_message' | 'session' | 'clarification_request' | 'related_files' | 'file_diff' | 'turn_end';
   text?: string;
   status?: string;
   sessionId?: string;
   taskId?: string;
-  workspace?: string;
+  agentId?: string;
+  toolUseId?: string;
+  questions?: ClarificationQuestion[];
+  files?: RelatedFile[];
+  diff?: FileDiffInfo;
+}
+
+export interface RelatedFile {
+  path: string;
+  name: string;
+  language?: string;
+}
+
+export interface FilePreviewResponse {
+  path: string;
+  name: string;
+  content: string;
+  language: string;
+  size: number;
+  truncated: boolean;
 }

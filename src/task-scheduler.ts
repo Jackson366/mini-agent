@@ -11,7 +11,7 @@ export interface SchedulerOptions {
   globalDir: string;
   dataDir: string;
   mcpServerPath: string;
-  onTaskMessage: (workspace: string, text: string, taskId: string) => void;
+  onTaskMessage: (agentId: string, text: string, taskId: string) => void;
 }
 
 function computeNextRun(scheduleType: string, scheduleValue: string): string | null {
@@ -37,10 +37,11 @@ export function startSchedulerLoop(options: SchedulerOptions): void {
     const dueTasks = getDueTasks();
     for (const task of dueTasks) {
       const startTime = Date.now();
-      const workspaceDir = `${workspaceBaseDir}/${task.workspace}`;
-      const sessionId = task.context_mode === 'workspace' ? getSession(task.workspace) : undefined;
+      const isMain = task.agent_id === 'main';
+      const agentDir = isMain ? workspaceBaseDir : `${workspaceBaseDir}/${task.agent_id}`;
+      const sessionId = task.context_mode === 'workspace' ? getSession(task.agent_id) : undefined;
 
-      console.error(`[scheduler] Running task ${task.id} for workspace ${task.workspace}`);
+      console.error(`[scheduler] Running task ${task.id} for agent ${task.agent_id}`);
 
       const stream = new MessageStream();
       const prompt = `[SCHEDULED TASK - DO NOT ASK QUESTIONS]
@@ -61,16 +62,16 @@ ${task.prompt}`;
           input: {
             prompt,
             sessionId,
-            workspace: task.workspace,
+            agentId: task.agent_id,
             isScheduledTask: true,
           },
-          workspaceDir,
+          agentDir,
           globalDir,
           dataDir,
           mcpServerPath,
           onOutput: (output: AgentOutput) => {
             if (output.result) {
-              onTaskMessage(task.workspace, output.result, task.id);
+              onTaskMessage(task.agent_id, output.result, task.id);
             }
           },
           stream,

@@ -1,12 +1,47 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
+import { apiFetch } from '../lib/api';
+
+export interface RelatedFile {
+  path: string;
+  name: string;
+  language?: string;
+}
+
+export interface FileDiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: string[];
+}
+
+export interface FileDiffInfo {
+  filePath: string;
+  fileName: string;
+  language?: string;
+  diffType: 'create' | 'update' | 'edit';
+  additions: number;
+  deletions: number;
+  hunks: FileDiffHunk[];
+  timestamp: string;
+}
 
 export interface SseMessage {
-  type: 'assistant' | 'status' | 'error' | 'task_message' | 'session';
+  type: 'assistant' | 'assistant_delta' | 'assistant_end' | 'status' | 'error' | 'task_message' | 'session' | 'clarification_request' | 'related_files' | 'file_diff' | 'turn_end';
   text?: string;
   status?: string;
   sessionId?: string;
   taskId?: string;
-  workspace?: string;
+  agentId?: string;
+  toolUseId?: string;
+  questions?: Array<{
+    question: string;
+    header: string;
+    multiSelect?: boolean;
+    options: Array<{ label: string; description: string }>;
+  }>;
+  files?: RelatedFile[];
+  diff?: FileDiffInfo;
 }
 
 const API_BASE = import.meta.env.DEV ? 'http://localhost:3210' : '';
@@ -47,27 +82,27 @@ export function useSSE() {
     };
   }, [connect]);
 
-  const send = useCallback(async (text: string, workspace: string) => {
-    await fetch(`${API_BASE}/api/chat`, {
+  const send = useCallback(async (text: string, agentId: string) => {
+    await apiFetch(`${API_BASE}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, workspace }),
+      body: JSON.stringify({ text, agentId }),
     });
   }, []);
 
-  const stop = useCallback(async (workspace: string) => {
-    await fetch(`${API_BASE}/api/chat/stop`, {
+  const stop = useCallback(async (agentId: string) => {
+    await apiFetch(`${API_BASE}/api/chat/stop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workspace }),
+      body: JSON.stringify({ agentId }),
     });
   }, []);
 
-  const newChat = useCallback(async (workspace: string) => {
-    await fetch(`${API_BASE}/api/chat/new`, {
+  const newChat = useCallback(async (agentId: string) => {
+    await apiFetch(`${API_BASE}/api/chat/new`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workspace }),
+      body: JSON.stringify({ agentId }),
     });
     setMessages([]);
   }, []);
@@ -76,5 +111,17 @@ export function useSSE() {
     setMessages([]);
   }, []);
 
-  return { connected, messages, send, stop, newChat, clearMessages };
+  const answerClarification = useCallback(async (
+    agentId: string,
+    toolUseId: string,
+    answers: Record<string, string>,
+  ) => {
+    await apiFetch(`${API_BASE}/api/chat/answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId, toolUseId, answers }),
+    });
+  }, []);
+
+  return { connected, messages, send, stop, newChat, clearMessages, answerClarification };
 }

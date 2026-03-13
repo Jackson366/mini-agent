@@ -1,0 +1,40 @@
+services:
+  mini-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mini-agent
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3410}:3410"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3410
+      - ANTHROPIC_AUTH_TOKEN=${ANTHROPIC_AUTH_TOKEN}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-https://open.bigmodel.cn/api/anthropic}
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SKILL_SYNC_AGENT_WHITELIST=${SKILL_SYNC_AGENT_WHITELIST:-main}
+    volumes:
+      # Persist database and workspace
+      - ./data:/app/data
+      - ./workspace:/app/workspace
+      - ./skills:/app/skills:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3410/api-docs', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - mini-agent-network
+
+networks:
+  mini-agent-network:
+    driver: bridge
+
+volumes:
+  mini-agent-data:
+  mini-agent-workspace:
