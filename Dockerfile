@@ -54,7 +54,7 @@ RUN pnpm install --no-frozen-lockfile
 COPY src ./src
 
 # Build backend
-RUN pnpm run build
+RUN pnpm run build:backend
 
 # Remove dev dependencies to keep runtime small
 RUN pnpm prune --prod
