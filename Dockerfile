@@ -30,7 +30,7 @@ RUN pnpm run build
 FROM node:20-slim AS backend-builder
 
 # Install build dependencies for better-sqlite3
-RUN apk add --no-cache python3 make g++ sqlite
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ sqlite3 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -66,7 +66,7 @@ FROM node:20-slim
 USER root
 
 # Install runtime and build dependencies for better-sqlite3
-RUN apk add --no-cache sqlite python3 make g++
+RUN apt-get update && apt-get install -y --no-install-recommends sqlite3 python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 # Install Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
