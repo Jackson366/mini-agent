@@ -5,7 +5,6 @@ yarn-debug.log*
 yarn-error.log*
 # package-lock.json  # Don't exclude - needed for npm ci
 yarn.lock
-pnpm-lock.yaml
 
 # Build outputs
 dist/
