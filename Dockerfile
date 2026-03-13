@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for mini-agent
 # Stage 1: Build Frontend
-FROM node:20-alpine AS frontend-builder
+FROM node:20-slim AS frontend-builder
 
 WORKDIR /app/client
 
@@ -27,7 +27,7 @@ COPY client/ ./
 RUN pnpm run build
 
 # Stage 2: Build Backend
-FROM node:20-alpine AS backend-builder
+FROM node:20-slim AS backend-builder
 
 # Install build dependencies for better-sqlite3
 RUN apk add --no-cache python3 make g++ sqlite
@@ -60,7 +60,7 @@ RUN pnpm run build:backend
 RUN pnpm prune --prod
 
 # Stage 3: Production Runtime
-FROM node:20-alpine
+FROM node:20-slim
 
 # Ensure running as root for maximum permissions
 USER root
