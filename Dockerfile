@@ -4,20 +4,25 @@ FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app/client
 
-# Copy frontend package files
-COPY client/package*.json ./
+# Copy pnpm config and workspace
+COPY .npmrc ./
+COPY pnpm-workspace.yaml ./
+COPY pnpm-lock.yaml ./
 
-# Upgrade npm to latest version
-RUN npm install -g npm@11.11.1
+# Copy frontend package files
+COPY client/package.json ./
+
+# Install pnpm
+RUN npm install -g pnpm@latest
 
 # Install frontend dependencies
-RUN npm ci
+RUN pnpm install --frozen-lockfile
 
 # Copy frontend source
 COPY client/ ./
 
 # Build frontend
-RUN npm run build
+RUN pnpm run build
 
 # Stage 2: Build Backend
 FROM node:20-alpine AS backend-builder
@@ -27,23 +32,28 @@ RUN apk add --no-cache python3 make g++ sqlite
 
 WORKDIR /app
 
+# Copy pnpm config and workspace
+COPY .npmrc ./
+COPY pnpm-workspace.yaml ./
+COPY pnpm-lock.yaml ./
+
 # Copy backend package files
-COPY package*.json ./
+COPY package.json ./
 COPY tsconfig.json ./
 
-# Upgrade npm to latest version
-RUN npm install -g npm@11.11.1
+# Install pnpm
+RUN npm install -g pnpm@latest
 # Install backend dependencies
-RUN npm ci
+RUN pnpm install --frozen-lockfile
 
 # Copy backend source
 COPY src ./src
 
 # Build backend
-RUN npm run build
+RUN pnpm run build
 
 # Remove dev dependencies to keep runtime small
-RUN npm prune --omit=dev
+RUN pnpm prune --prod
 
 # Stage 3: Production Runtime
 FROM node:20-alpine
@@ -64,7 +74,7 @@ RUN mkdir -p ~/.claude && \
 WORKDIR /app
 
 # Copy backend package files and build output
-COPY --from=backend-builder /app/package*.json ./
+COPY --from=backend-builder /app/package.json ./
 COPY --from=backend-builder /app/node_modules ./node_modules
 COPY --from=backend-builder /app/dist ./dist
 
