@@ -12,11 +12,13 @@ COPY pnpm-lock.yaml ./
 # Copy frontend package files
 COPY client/package.json ./
 
+RUN npm install -g npm@11.11.1
+
 # Install pnpm
 RUN npm install -g pnpm@latest
 
 # Install frontend dependencies
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --no-frozen-lockfile
 
 # Copy frontend source
 COPY client/ ./
@@ -41,10 +43,12 @@ COPY pnpm-lock.yaml ./
 COPY package.json ./
 COPY tsconfig.json ./
 
+RUN npm install -g npm@11.11.1
+
 # Install pnpm
 RUN npm install -g pnpm@latest
 # Install backend dependencies
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --no-frozen-lockfile
 
 # Copy backend source
 COPY src ./src
